@@ -17,7 +17,7 @@ jobs:
           node-version: '22'
       - name: Harness regression tests
         run: node --test harness/tests/ckm-gate.test.mjs
-      - name: Governance + Scope + No Cloud AI guard
+      - name: Safety guard + advisory governance
         env:
           CKM_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CKM_PR_TITLE: ${{ github.event.pull_request.title }}
