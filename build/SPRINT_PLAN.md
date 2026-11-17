@@ -4,6 +4,11 @@
 > **目前狀態：PLAN READY／程式尚未完成**。本文件與分篇 Sprint 文件是執行安排，**不另立產品需求**；正式功能／依賴／P0 與 P1 以 [Build Bible B01–B21](BACKLOG.md) 和既有 Business v1.2／System v1.7／Functional v1.8 為準。  
 > 此計畫 **不是新的 Governance Gate**：CKM Harness 已容許開始 Coding；**不需要每個 Sprint 再次 Activation、Freeze 或批准**。人類只決定有爭議的產品行為，以及真正發布。
 
+
+## 0. 先讀規格，再依 Sprint Coding（不能只讀此計畫）
+
+**先讀 [四份細部設計對照／B01–B21 追溯矩陣](TRACEABILITY.md)。** 每個 Coding Task 都必須同時對照 [正式 Bible](BACKLOG.md)、[GUI Spec](../design/GUI_UX_SPEC.md)、[Functional Spec](../design/FUNCTIONAL_SPEC.md)、[Technical Spec](../design/TECHNICAL_SPEC.md)、[Acceptance Spec](../test/ACCEPTANCE_SPEC.md) 中受影響的章節。**Sprint 是工作排程，不是新的產品 Spec，也不能改寫 E2E Test 的原始 ID／期望結果。**
+
 ## 1. 三個 Sprint 的交付
 
 | Sprint | 對應 Bible | 真正可見成果 | 交付門檻 |
@@ -68,5 +73,6 @@
 - [Bible：B01–B21](BACKLOG.md)（唯一建置工作總表）。
 - [Sprint 1 驗收](sprints/SPRINT-01_LOCAL_AI.md)｜[Sprint 2 驗收](sprints/SPRINT-02_MATCHING.md)｜[Sprint 3 驗收](sprints/SPRINT-03_RELEASE.md)。
 - [單一 AI Harness](../harness/README.md)；[PR #4 已合併](https://github.com/NFF98/CKM/pull/4)。
-- 四份細部規格目前在 [PR #3 草案](https://github.com/NFF98/CKM/pull/3)，只能當提案參考，**不視為已批准的新增產品要求**；已獲 Human 明確確認的「Code-first GUI」與「Phase 1 無 Cloud AI」不受其 Draft 狀態影響。
+- **四份詳細規格已合併至 main**：[GUI／UX](../design/GUI_UX_SPEC.md)、[Functional](../design/FUNCTIONAL_SPEC.md)、[Technical](../design/TECHNICAL_SPEC.md)、[Acceptance](../test/ACCEPTANCE_SPEC.md)。它們是 Sprint Coding 的**實際工作依據**；其中標記 PROPOSED／OPEN 的產品行為仍不代表已批准。
+- **[B01–B21 完整追溯矩陣](TRACEABILITY.md)**：每個 B-ID → 四份 Spec 章節 → Sprint AC → 正式 Test IDs（T01–T13、E2E-01～05）。避免 Sprint 規格另創定義。
 - 開工當下 B01–B21 **沒有任何 App 功能被標記 PASS**。進度／測試結果依後續 Coding PR 及實際 Evidence 更新，不在此偽造。
