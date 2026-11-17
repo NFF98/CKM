@@ -1,0 +1,57 @@
+name: B01 Android APK Smoke
+on:
+  pull_request:
+    paths:
+      - 'build/app/**'
+      - '.github/workflows/b01-android-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Android ARM64 debug APK (not a real-device test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Upgrade npm for stable dependency install
+        run: npm install -g npm@11
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK / NDK
+        run: |
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.0.12077973'
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: build/app/src-tauri
+      - name: Install project dependencies
+        working-directory: build/app
+        run: npm install --no-audit --no-fund
+      - name: Initialize Tauri Android project
+        working-directory: build/app
+        run: npx tauri android init --ci
+      - name: Build installable Android debug APK
+        working-directory: build/app
+        run: npx tauri android build --debug --apk --target aarch64 --ci
+      - name: Confirm APK exists
+        run: |
+          find build/app/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print
+          test -n "$(find build/app/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cakami-b01-android-arm64-debug
+          path: build/app/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
