@@ -4,7 +4,7 @@
 
 | Task | 開發狀態 | 測試狀態 | 目前能客觀證明的交付／下一步 |
 |---|---|---|---|
-| **B01** | IN_PROGRESS | Android 真機 NOT_RUN | Coding PR：Tauri TypeScript 畫面、Rust Command、平台 Adapter、測試；待 CI 與 Android 真機驗收 |
+| **B01** | IN_PROGRESS | Android 真機 NOT_RUN | PR #6：Tauri TypeScript 畫面、Rust Command、平台 Adapter、Unit Tests；TS Typecheck／5 Tests／Vite Build 已在 CI PASS；Rust 與 APK Build 持續驗證；Android 真機仍 NOT_RUN |
 | B02 | NOT_STARTED | NOT_RUN | 選圖／拍照／文字 Drop、本地保存 |
 | B03 | NOT_STARTED | NOT_RUN | 真機本地 OCR／Gemma E2B；最大技術風險 |
 | B04 | NOT_STARTED | NOT_RUN | 內容 ≠ Goal |
@@ -14,6 +14,12 @@
 | B08 | NOT_STARTED | NOT_RUN | Consent／分享預覽 |
 | B09 | NOT_STARTED | NOT_RUN | 追問限制 |
 
-**當前實作 PR**：在 `feat/s1-b01-tauri-mobile-shell` 分支，完成後以 GitHub PR／CI 作為證據。
+**當前實作 PR**：[PR #6](https://github.com/NFF98/CKM/pull/6)，分支 `feat/s1-b01-tauri-mobile-shell`。
+
+**實際測試 Evidence**
+- TypeScript：[`B01 App` Run #44024038403](https://github.com/NFF98/CKM/actions/runs/44024038403)；TS Typecheck、Vitest **5/5 PASS**、Vite Build **PASS**。
+- Rust：早期 Run 因 App Icon 不是 RGBA 導致 `generate_context!` 編譯失敗；已換成 RGBA 並重跑。**尚未確認 PASS**。
+- Android ARM64 Debug APK：[APK Smoke Workflow](https://github.com/NFF98/CKM/actions/workflows/b01-android-apk.yml) 已建立；曾因同一個 PNG 問題失敗，修正後重新打包中。**尚未確認 APK 可安裝**。
+- Android 實體裝置離線 UI↔Rust 驗收：**NOT_RUN**；無硬體 Evidence，不可把雲端 CI 算成真機 PASS。
 
 **規則**：每次繼續 Sprint 1，先看此表與最新 PR，從未完成的 AC 續做；遇到真機環境不足要標 NOT_RUN／BLOCKED，不得把 Harness CI 綠燈算成 Android 功能完成。
