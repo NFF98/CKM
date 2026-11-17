@@ -5,7 +5,7 @@
 **MVP 市場：18 歲以上 JLPT N2 學習者；Android 優先；S01–S09，以及 S04a 無候選人的分支**  
 **語言原則：[CKM 繁體中文溝通規範](../communication/COMMUNICATION_RULES.md)**
 
-> **此文件是唯一的建置工作待辦總表。** 先確認功能與依賴，再決定如何分配 Sprint；本文件不預設工期，也不宣稱任何功能已完成。
+> **此文件是唯一的建置工作待辦總表。** 使用者已確認以 [三個 Sprint](SPRINT_PLAN.md) 分組執行；[B01–B21 ↔ 四份 Spec ↔ 驗收追溯表](TRACEABILITY.md) 另列。**Sprint 不能改變本表功能與依賴**；此文件不預設工期，也不宣稱任何功能已完成。
 
 ## 一、設計依據與產品邊界
 
@@ -33,7 +33,7 @@
 - **安全與同意**：第一階段只服務 18 歲以上；公開 Intent 須明示同意；雙方接受後才開放聊天；須支援封鎖、檢舉、撤銷及過期。
 - **MVP 不做**：地圖與位置追蹤（Phase 2）、Travel Match（Phase 3）、餐廳訂位、供應鏈整合或完整遊戲養成。
 
-## 二、功能式建置待辦（依賴排序，不預先分 Sprint）
+## 二、功能式建置待辦（依賴排序；Sprint 分組另見計畫）
 
 優先級：**P0**＝MVP 必須完成；**P1**＝驗證品質優化。  
 進度：所有項目皆為 **未開始**；只有附上測試或驗收證據後才能標記完成。
@@ -98,10 +98,10 @@
 
 ## 五、如何管理 Backlog
 
-- **先有 Backlog，後分 Sprint**：舊版 `build/sprints/SPRINT-01.md` 與 `SPRINT-02.md` 已刪除；舊 Issues #1、#2 已關閉。
+- **先有 Backlog，後分 Sprint**：使用者現已確認 [Sprint 1＝B01–B09](sprints/SPRINT-01_LOCAL_AI.md)、[Sprint 2＝B10–B18](sprints/SPRINT-02_MATCHING.md)、[Sprint 3＝B19–B21](sprints/SPRINT-03_RELEASE.md)。舊版兩個 Sprint 文件曾撤回，與目前三 Sprint 不同。
 - 每項工作完成時須附上可重現的驗收證據：測試結果、Commit／PR、使用合成資料的畫面或裝置實測。
 - 尚未動工的項目一律標示「未開始」；不得將資料夾或待辦清單存在，當成 App 已實作。
-- 未經使用者同意，不預先決定兩個 Sprint 的工作分配或承諾兩週可完成。
+- 使用者已決定採三個 Sprint。這是開發分組，不代表承諾工期或新增 Sprint Activation／治理硬限制。
 - 如產品決策變更，需同步指出受影響的畫面 S01–S09、參數規則、資料隱私及測試。
 - **所有 GitHub 溝通、文件與後續報告均使用繁體中文**，即使需求是以英文提出。
 
