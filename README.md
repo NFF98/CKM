@@ -1,33 +1,34 @@
-# CAKAMI (CKM) — MVP Workspace
+# CAKAMI（CKM）｜MVP 專案工作區
 
-CAKAMI = **Drop Anything → Discover People → Accomplish Together.**
+**語言規則：使用者可以用英文輸入，但 CKM 的回覆、文件、Issues、PR、測試、除錯、部署與交接，全部使用繁體中文。**  
+完整規範：[AGENTS.md](AGENTS.md)／[溝通規則](communication/COMMUNICATION_RULES.md)。
 
-**Phase 1 (MVP):** adult JLPT N2 Study Match on Android first. A user drops a note/image, confirms intent, authorizes minimal sharing, finds a real study partner, and completes a 15-minute text study session.
+CAKAMI 的初期目標：**Drop 內容 → 確認意圖 → 找到真人 → 一起完成事情**。
 
-> Status: **design / planning**, not a released product. The existing business design is a hypothesis requiring validation.
-> Repository is **public**: never commit real user images, personal data, API keys, service-role keys, or private research.
+**Phase 1 MVP：** 18 歲以上 JLPT N2 學習者，Android 優先。使用者放入圖片或文字，由本地 AI 協助理解，在明確確認意圖並同意分享必要資料後尋找學伴，進行 15 分鐘文字學習，最後由雙方確認是否完成。
 
-## Repository map
+> **目前狀態：設計與建置規劃中，尚未開始實作或正式發布。** 商業模式與配對效益目前都是待驗證假說。  
+> **注意：本 Repository 目前為 Public。** 不得提交真實使用者資料、私人圖片、完整聊天、密鑰或未授權的敏感內容。
 
-| Folder | Purpose |
+## Repository 導覽
+
+| 資料夾 | 用途 |
 |---|---|
-| [design/](design/) | Approved product/system specifications. [doc/](design/doc/) contains the latest business proposal plus two user-uploaded system/functional designs. |
-| [build/](build/) | Implementation workspace and a dependency-ordered **Build Backlog**; sprint planning is deferred. |
-| [test/](test/) | Automated tests, acceptance scenarios, benchmark cases. |
-| [debug/](debug/) | Defect reports, reproduction guides, root-cause notes (sanitize sensitive data). |
-| [deploy/](deploy/) | Android packaging, CI/CD, release checklist, rollback guidance. |
-| [communication/](communication/) | Decisions, release notes, product updates, handover notes. |
+| [design/](design/) | 最新商業、系統、功能設計文件。使用者上傳的原始 Word 規格不任意更動 |
+| [build/](build/) | 建置任務、程式實作與進度；目前唯一工作清單為 [Build Backlog](build/BACKLOG.md) |
+| [test/](test/) | 自動化測試、驗收案例與配對效果測量 |
+| [debug/](debug/) | 問題重現、錯誤紀錄、根因分析與修正驗證 |
+| [deploy/](deploy/) | Android 打包、發布檢查及回滾 |
+| [communication/](communication/) | 繁體中文溝通規範、決策、進度與交接 |
 
-## Architecture to implement
+## 核心技術架構（規劃）
 
-Tauri v2 + TypeScript UI → Rust Core → local Gemma E2B / OCR → SQLite. With explicit consent, publish minimal searchable intent to a cloud service (planned: Supabase/Postgres + pgvector) for matching, invitations, and chat. AI proposes data; Rust validates it. No raw private photos or notes sent to the cloud for normal local processing.
+`Tauri v2 + TypeScript UI` → `Rust` → 本地 `OCR / Gemma E2B` 候選模型 → `SQLite`。如使用者同意共享，才同步最少必要的 Intent 資料到雲端服務（規劃為 Supabase／PostgreSQL／pgvector）供配對、邀請與聊天。原圖、私人 OCR 與完整歷史預設留在本地。
 
-**Hard MVP rules:** at most **8 active matching parameter concepts per intent**; at most **3 proactive AI questions per intent activation / matching attempt**; known source/scope/confirmation/lifetime; no unapproved cloud publication; no silent deletion of hard constraints.
+**MVP 強制原則：** 每個 Intent 最多 **8 個有效配對 Parameter 概念**；每次 Intent 啟用／配對嘗試最多 **3 題主動追問**；所有值需具備來源、scope、確認狀態與期限；未授權不得公開，且不可默默移除使用者硬條件。
 
-## Plan build first; assign sprints later
+## 下一步
 
-**Current single build queue:** [Phase 1 MVP Build Backlog — B01–B21](build/BACKLOG.md).
+先檢視 **[Phase 1 建置待辦總表（B01–B21）](build/BACKLOG.md)**，再依依賴與驗收結果決定是否分成兩個 Sprint。之前建立的 Sprint 計畫已撤回，Issues #1/#2 已關閉。
 
-**Current design sources:** [Business v1.2](design/doc/CAKAMI_Business_Proposal_v1.2_MVP_Aligned.md), [System v1.7](design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx), [Functional v1.8](design/doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx).
-
-Earlier Sprint 01/02 plans and Issues #1/#2 have been retired; scope will be grouped into sprints only after backlog review.
+**最新設計文件：** [Business v1.2](design/doc/CAKAMI_Business_Proposal_v1.2_MVP_Aligned.md)、[System v1.7](design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx)、[Functional v1.8](design/doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx)。
