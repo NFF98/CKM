@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Upgrade npm (Runner npm 10 installer crash workaround)
+        run: npm install --global npm@11
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
       - name: TypeScript typecheck
