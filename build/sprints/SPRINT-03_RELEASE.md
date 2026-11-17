@@ -7,12 +7,17 @@
 - **發布依賴**：Bible 只要求 **B21 依賴 B19；參考 B20**。B20 可稍後完成、不可升格成發布硬門檻。
 - **不誤導平台支援**：iOS 程式從 Day 1 保持可移植；本階段交付是 Android Pilot，不是已通過 iOS App／TestFlight。
 
+
+## Coding 前必讀的唯一正式測試定義
+
+先核對 [Acceptance Spec](../../test/ACCEPTANCE_SPEC.md) 第 2～5 節（**T01–T13／GUI-01～10／E2E-01～05**）和 [B19–B21 追溯表](../TRACEABILITY.md)，再依 [Functional Spec](../../design/FUNCTIONAL_SPEC.md)、[Technical Spec](../../design/TECHNICAL_SPEC.md)、[GUI Spec](../../design/GUI_UX_SPEC.md) 的實際契約做端到端測試。**下面是摘要，不能與 Acceptance Spec 產生另一組衝突的正式 E2E ID。**
+
 ## 1. B19–B21 的可操作驗收
 
 | AC-ID／B-ID | 工作 | 必須 PASS 的實測條件 | Evidence |
 |---|---|---|---|
 | **S3-AC19／B19（P0）** | Rust／SQLite、Supabase RLS／Server Rules、Android E2E、全部 P0 Regression | v1.7 **T01–T13** 全 PASS；雲端越權、8-slot 並發、離線撤銷、期限／封鎖、聊天／完成完整跑過；No Cloud AI 網路審查＋斷網真機 OCR／E2B；失敗案例都有修正及重測 | 真執行命令、log、device／runtime／test account 環境、可重現 Fixture、PR／Commit |
-| **S3-AC20／B20（P1）** | 公平配對 Benchmark：固定表單、純向量、CAKAMI 動態參數 | **相同候選池／Goal／時間／硬條件**比較每 100 個有效 Intent 的真正完成數、問題量、硬條件違規、延遲與成本；不足樣本要標示限制、不得編造效果 | 版本固定的合成測試池、方法、統計表、重現指令；**可以 NOT_RUN 且不阻礙 B21** |
+| **S3-AC20／B20（P1）** | 公平配對 Benchmark：固定表單、單 Goal 向量、多向量＋Constraints、CAKAMI 8-slot＋Dynamic Questions | **相同候選池／Goal／時間／硬條件**比較每 100 個有效 Intent 的真正完成數、問題量、硬條件違規、延遲與成本；不足樣本要標示限制、不得編造效果 | 版本固定的合成測試池、方法、統計表、重現指令；**可以 NOT_RUN 且不阻礙 B21** |
 | **S3-AC21／B21（P0）** | Android Pilot 打包、安裝、啟動、安全與發布／回滾說明 | **可安裝且實際跑得動的 APK**；真機 S01–S09＋S04a 主線能重現；B19 P0 全 PASS；有模型啟動時間／記憶體／耗電證據、權限／隱私／風險紀錄，以及回滾／停止測試版的明確辦法 | APK Hash／版本、測試手機型號、Android 版本、安裝與離線步驟、裝置測試紀錄、Release Notes |
 
 Sprint 3 不表示測試可以到最後一天才開始。**S1／S2 每個 B-ID 的自動化測試應隨程式一起寫**；Sprint 3 執行跨模組 P0 回歸、補齊未通過的項目，並留下正式的 Release Evidence。
@@ -52,10 +57,10 @@ Harness 靜態 Cloud AI 關鍵字檢查只是快速防呆；不能代替三項�
 | E2E-ID | 手機上怎麼做 | 必須看到什麼 |
 |---|---|---|
 | **E2E-01 正常** | Drop N2 圖 → 本地辨識 → 本人確認 Goal → 授權 → 真 A/B 配對 → 邀請 → Chat → 15 分鐘 → 雙方確認 | Server 僅有合法已完成 Session；沒有私有資料洩漏 |
-| **E2E-02 零候選** | 設定沒有其他合法匹配者的條件 | S04a 真正顯示無候選，沒有虛構人 |
-| **E2E-03 權限攻擊** | A 嘗試讀 B 私密 Intent／聊天、強行跳過雙方同意 | Cloud／Client 都拒絕，Server 不只依賴前端按鈕 |
-| **E2E-04 撤銷** | 分享後關網撤銷，再開網 | 本地即時停止、同步待處理可見，Server ACK 後不再出現在候選池 |
-| **E2E-05 不算成功** | 未滿 15 分鐘、只有單方確認、拒絕邀請／No-show | 不計入 COMPLETED；重試／連點不重複計數 |
+| **E2E-02 只存單字** | Drop「パクる」，選擇只收藏、不找學伴 | 私人內容保存，無發佈／公開 Intent，不因單字增加大量 Matching Slots |
+| **E2E-03 無候選** | 設定沒有任何合法相容候選的 Goal／Need／Offer | S04a 真的顯示無候選；不虛構真人或成功機率 |
+| **E2E-04 拒絕／封鎖／撤銷** | B 拒絕／封鎖 A，A 直接呼叫 Chat API；A 離線撤銷再上網 | 未獲雙方同意不得聊天；本地立即排除、雲端待 ACK，重連後下架 |
+| **E2E-05 Completion 負向** | 未滿 15 分鐘、只有單方確認、重複提交、取消、No-show、越權提交 | 不計入 COMPLETED；重試／連點不重複計數 |
 
 **失敗時不能拿假成功資料補滿測試。** 存在產品行為不確定的項目（尤其年齡、分享欄位、邀請 TTL、斷線計時），只阻擋相關測試判定，請使用者針對該點決策；不鎖住其他開發工作。
 
