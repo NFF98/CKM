@@ -62,8 +62,13 @@ function setView(view: View): void {
   diagnosticView.hidden = !diagnostic;
   tabDrop.classList.toggle("active", !diagnostic);
   tabDiagnostic.classList.toggle("active", diagnostic);
-  tabDrop.toggleAttribute("aria-current", !diagnostic);
-  tabDiagnostic.toggleAttribute("aria-current", diagnostic);
+  if (diagnostic) {
+    tabDrop.removeAttribute("aria-current");
+    tabDiagnostic.setAttribute("aria-current", "page");
+  } else {
+    tabDiagnostic.removeAttribute("aria-current");
+    tabDrop.setAttribute("aria-current", "page");
+  }
 }
 
 async function runBridgeCheck(): Promise<void> {
