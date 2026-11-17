@@ -1,6 +1,6 @@
-# CAKAMI｜功能行為詳細規格（審核草案）
+# CAKAMI｜功能行為詳細參考規格（SOURCE／PROPOSED／OPEN）
 
-> **狀態：DRAFT／待 Human Review，未 LOCKED、未授權 Coding。**  
+> **狀態：可作為 Coding 參考；SOURCE 依既有正式規格、已確認決策可用，PROPOSED／OPEN 保持待決；Coding 不需等待整份文件 LOCKED。**  
 > 日期：2026-11-17；範圍：Phase 1，18+ JLPT N2 Study Match，Android First，S01–S09／S04a。  
 > 正式來源：../build/BACKLOG.md（B01–B21）；doc/CAKAMI_Business_Proposal_v1.2_MVP_Aligned.md；doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx（尤其 §3、§8、§15–16）；doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx。  
 > 用法：**SOURCE** 代表有正式來源的既有規則；**PROPOSED** 代表有待批准的細節；**OPEN** 代表仍須 Human 決策。不得把 DRAFT 當成最新已核准 Product Truth。
@@ -123,7 +123,7 @@
 | Rust | 驗證、標準化、Atomic Transaction、來源與事件管理 | 把模型猜測當人類操作 |
 | Cloud | 以 Auth + Server-side 權限／版本／Consent／TTL 判斷公開與匹配 | 只相信手機傳的 confirmed flag、分數與時間 |
 
-## 4. 決策清單與 Freeze 前條件
+## 4. 待決清單與相應功能實作前條件
 
 | ID | 需確認 | 主要 B-ID | 等級 |
 |---|---|---|---|
