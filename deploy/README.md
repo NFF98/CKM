@@ -1,12 +1,14 @@
-# Deploy
+# CAKAMI｜部署工作區
 
-**Phase 1 target:** Android first through Tauri v2. iOS and desktop are later targets.
+**Phase 1 首發目標：Android（Tauri v2）。** iOS 與桌面版並非目前 MVP 阻擋條件。尚未建立正式發布流程。
 
-Release gate:
-1. All P0 parameter integrity + privacy + auth tests pass.
-2. Local E2B model compatibility, battery, memory and latency checked on target phones.
-3. Backend access policies and rate limits verified; no service-role key in client.
-4. Test mutual acceptance, chat, revocation, expiry and complete-session flow end-to-end.
-5. Version/tag, signed artifact and rollback notes recorded.
+## 發布前檢查
 
-No production project or deployment has been created yet.
+1. Rust／SQLite Parameter Integrity 與隱私、安全、授權等 **P0 自動化測試全部通過**。
+2. 已在目標 Android 裝置實測 E2B：辨識品質、推論速度、記憶體、耗電與相容性。
+3. 雲端權限政策、伺服器重新驗證及限制存取措施完成；不得把高權限金鑰放入 App。
+4. 雙方邀請、Chat、過期撤銷、15 分鐘練習與完成確認的端到端測試通過。
+5. 紀錄發布版本、簽章、安裝方式、已知限制與回滾步驟。
+6. 確認使用者資料授權與刪除／撤銷流程能被實際操作。
+
+**現在沒有任何已部署的正式產品。** 部署紀錄、Release Notes、錯誤追蹤及交接一律使用繁體中文。
