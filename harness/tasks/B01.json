@@ -1,0 +1,28 @@
+{
+  "task_id": "B01",
+  "status": "PLANNED",
+  "backlog_ref": "build/BACKLOG.md#b01",
+  "scope": "Tauri v2 + TypeScript + Rust 的 Android 專案骨架、基礎導航及 UI↔Rust Bridge；不包含 B03 模型整合",
+  "allowed_write_prefixes": [
+    "build/app/",
+    "build/core/",
+    "build/mobile/",
+    "test/"
+  ],
+  "forbidden_mutation": [
+    "build/BACKLOG.md",
+    "AGENTS.md",
+    "design/doc/"
+  ],
+  "acceptance": [
+    "真實 Android 裝置可啟動 App",
+    "Android UI 可呼叫 Rust Command 並收到可驗證結果",
+    "本地初始畫面不依賴網路或 Cloud AI",
+    "附有 Bridge 與基本導航的實際測試及裝置 Evidence"
+  ],
+  "testing": {
+    "automated": "必要時 TS typecheck、Rust cargo test、最小 Bridge contract test",
+    "human_device": "adb 裝置識別、Android 版本、APK/Dev 部署、離線 UI↔Rust 截圖或日誌"
+  },
+  "note": "本 Task 尚未 activation，不能因 manifest 存在宣稱已 Coding／PASS。"
+}
