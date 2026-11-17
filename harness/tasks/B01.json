@@ -1,6 +1,6 @@
 {
   "task_id": "B01",
-  "status": "READY",
+  "status": "IN_PROGRESS",
   "backlog_ref": "build/BACKLOG.md#b01",
   "scope": "Tauri v2 + TypeScript + Rust 的 Android 專案骨架、基礎導航及 UI↔Rust Bridge；不包含 B03 模型整合",
   "allowed_write_prefixes": [
@@ -24,5 +24,12 @@
     "automated": "必要時 TS typecheck、Rust cargo test、最小 Bridge contract test",
     "human_device": "adb 裝置識別、Android 版本、APK/Dev 部署、離線 UI↔Rust 截圖或日誌"
   },
-  "note": "供 Coding Agent 查閱的工作清單，非程式實作的批准／鎖定機制。使用者已批准 CKM Harness 開工；不需另開 Task Activation PR。B01 是否通過仍需實際 Android 真機 Evidence。"
+  "note": "供 Coding Agent 查閱的工作清單，非程式實作的批准／鎖定機制。使用者已批准 CKM Harness 開工；不需另開 Task Activation PR。B01 是否通過仍需實際 Android 真機 Evidence。",
+  "evidence": {
+    "coding_pr": "https://github.com/NFF98/CKM/pull/6",
+    "typescript_rust_ci": "https://github.com/NFF98/CKM/actions/runs/44024343756",
+    "current_commit_ci": "https://github.com/NFF98/CKM/actions/runs/44024584407",
+    "android_apk_build": "https://github.com/NFF98/CKM/actions/runs/44024584452",
+    "tests": "TypeScript 5/5 PASS；Rust 3/3 PASS；Vite Build PASS；Android 真機 NOT_RUN"
+  }
 }
