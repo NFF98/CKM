@@ -8,6 +8,16 @@
 - **Demo**：A/B 兩個**真實測試帳號**，N2 相同 Goal + Need↔Offer 相容 → A 看到 B 候選 → 邀請 → B 接受 → Chat → 練習滿規定時長 → A、B 各自確認 → 最後有且只有 1 筆合法 COMPLETED。
 - **不假設**「建好資料表」就是有真人匹配；可使用受控、已同意的**合成測試帳號資料**，不得宣稱有人真的在使用產品。
 
+
+## Coding 前應讀的來源規格
+
+這份 Sprint **不是新的配對演算法／Server Contract**。B10–B18 的依據為 [Bible](../BACKLOG.md)＋[逐項追溯表](../TRACEABILITY.md)：
+[Functional Spec](../../design/FUNCTIONAL_SPEC.md) S03–S09／S04a、
+[Technical Spec](../../design/TECHNICAL_SPEC.md) §4–5（Consent／RLS／Matching／Session）、
+[GUI Spec](../../design/GUI_UX_SPEC.md) S04／S04a／S05–S09、
+[Acceptance Spec](../../test/ACCEPTANCE_SPEC.md) B10–B18／T07–T13／E2E-01、03–05。
+**正式 E2E-01～05 的名稱與內容只能由 Acceptance Spec 定義；本 Sprint 自訂的開發劇本一律改稱 S2-FLOW。**
+
 ## 1. B10–B18 的可操作驗收
 
 | AC-ID／B-ID | 要做出來的功能 | 具體 PASS／必須拒絕的情況 | Evidence |
@@ -39,15 +49,15 @@
 
 ## 3. 必須實際執行的完整操作劇本
 
-**E2E-S2-01 正常**：A、B 登入與符合成年確認 → A/B 授權發布 → A 查詢找到 B → A 邀請 → B 接受 → 開 Chat → 依 Server 計時練習 → 各自確認 → 查 Server 僅 1 筆 COMPLETED。
+**S2-FLOW-01 正常（對應正式 E2E-01）**：A、B 登入與符合成年確認 → A/B 授權發布 → A 查詢找到 B → A 邀請 → B 接受 → 開 Chat → 依 Server 計時練習 → 各自確認 → 查 Server 僅 1 筆 COMPLETED。
 
-**E2E-S2-02 無候選**：A 的硬條件與所有人衝突 → S04a 出現；不虛構或建議不存在的對象。
+**S2-FLOW-02 無候選（對應正式 E2E-03）**：A 的硬條件與所有人衝突 → S04a 出現；不虛構或建議不存在的對象。
 
-**E2E-S2-03 隱私／攻擊**：未經同意發佈；跨帳號讀取；A 偽造 B 的確認事件；重播過期邀請；第三人傳訊 → 全部被 Server 拒絕。
+**S2-FLOW-03 隱私／攻擊（對應正式 T08、E2E-04／05 的部分負向案例）**：未經同意發佈；跨帳號讀取；A 偽造 B 的確認事件；重播過期邀請；第三人傳訊 → 全部被 Server 拒絕。
 
-**E2E-S2-04 撤銷／離線**：A 分享後離線撤銷 → 手機立即停止本地搜尋、顯示 Cloud 待撤銷 → 重連 Server ACK → 其他帳號候選再查詢不可見。
+**S2-FLOW-04 撤銷／離線（對應正式 T07、E2E-04）**：A 分享後離線撤銷 → 手機立即停止本地搜尋、顯示 Cloud 待撤銷 → 重連 Server ACK → 其他帳號候選再查詢不可見。
 
-**E2E-S2-05 未達完成**：只有 A 確認、未達 15 分鐘、取消或 No-show → 不計入 COMPLETED。
+**S2-FLOW-05 未達完成（對應正式 E2E-05）**：只有 A 確認、未達 15 分鐘、取消或 No-show → 不計入 COMPLETED。
 
 以上每個 E2E 的設定、時間、帳號資料、HTTP 狀態、Server 端事實、UI 結果均需留下可重現 Evidence；不要只靠 UI 截圖宣稱後端 RLS 安全。
 
