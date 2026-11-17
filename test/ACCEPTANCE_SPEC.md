@@ -67,7 +67,7 @@
 
 > B19 不應等所有功能寫完才第一次建立：每個 B-ID 開發時即新增對應測試，B19 只完成全串接 Regression 與 Release Gate。
 
-## 4. GUI 驗收（PROPOSED，需完成 Wireframe／High-fi Approval 後鎖定）
+## 4. GUI 驗收（Code-first：由已核准操作規則 + Android 實作證據鎖定；不需 High-fi）
 
 | GUI-ID | 畫面／範圍 | 預期結果 |
 |---|---|---|
@@ -82,7 +82,7 @@
 | GUI-09 | Async loading／retry | 真 checkpoint 才有 %；否則只有階段文字＋活動指示，不 fake progress |
 | GUI-10 | Cross-screen | 返回／取消／Dialog focus／overlay、同一元件狀態、隱私揭露與正式功能一致 |
 
-目前 GUI-01–GUI-10 全部 **NOT_RUN**；在 GUI/UX Screen-by-screen 人工審核前，不得標為 Approved。
+目前 GUI-01–GUI-10 全部 **NOT_RUN**；以真正 Android App 的逐頁功能／操作／狀態驗收，不要求 High-fi PNG／Mockup。未有真機 Evidence 不得標為 PASS。
 
 ## 5. Android 端到端正式腳本（PROPOSED）
 
@@ -172,7 +172,7 @@ reviewed_at_utc: null
 | Decision | 需要鎖定 |
 |---|---|
 | A-01 | B03 的 100 張測試集來源、標註規則、裝置及準確率／效能門檻 |
-| A-02 | GUI 高保真審核方法及 Android 目標畫面尺寸 |
+| A-02 | Android 可操作 GUI 的驗收方式、目標畫面尺寸與測試設備（**不需高保真圖**） |
 | A-03 | 15 分鐘從哪個 Event 起算，背景／離線／No-show 的測試預期 |
 | A-04 | Auth／成年驗證與跨帳號存取拒絕的精確政策 |
 | A-05 | Chat 訊息限流、封鎖後歷史可見性、資料保存 |
