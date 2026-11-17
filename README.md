@@ -7,7 +7,7 @@ CAKAMI 的初期目標：**Drop 內容 → 確認意圖 → 找到真人 → 一
 
 **Phase 1 MVP：** 18 歲以上 JLPT N2 學習者，Android 優先。使用者放入圖片或文字，由本地 AI 協助理解，在明確確認意圖並同意分享必要資料後尋找學伴，進行 15 分鐘文字學習，最後由雙方確認是否完成。
 
-> **目前狀態：設計與建置規劃中，尚未開始實作或正式發布。** 商業模式與配對效益目前都是待驗證假說。  
+> **目前狀態：已整理 Coding 參考規格與 3 Sprint；App 功能尚未完成或正式發布。** 商業模式與配對效益仍是待驗證假說。  
 > **注意：本 Repository 目前為 Public。** 不得提交真實使用者資料、私人圖片、完整聊天、密鑰或未授權的敏感內容。
 
 ## Repository 導覽
@@ -27,8 +27,12 @@ CAKAMI 的初期目標：**Drop 內容 → 確認意圖 → 找到真人 → 一
 
 **MVP 強制原則：** 每個 Intent 最多 **8 個有效配對 Parameter 概念**；每次 Intent 啟用／配對嘗試最多 **3 題主動追問**；所有值需具備來源、scope、確認狀態與期限；未授權不得公開，且不可默默移除使用者硬條件。
 
-## 下一步
+## Coding 入口（四份規格 ↔ 三個 Sprint，已整合）
 
-先檢視 **[Phase 1 建置待辦總表（B01–B21）](build/BACKLOG.md)**，再依依賴與驗收結果決定是否分成兩個 Sprint。之前建立的 Sprint 計畫已撤回，Issues #1/#2 已關閉。
+**第一步讀 [B01–B21 規格追溯矩陣](build/TRACEABILITY.md)**，找到這項工作的上層產品需求、GUI／功能／技術規格及驗收測試。
 
-**最新設計文件：** [Business v1.2](design/doc/CAKAMI_Business_Proposal_v1.2_MVP_Aligned.md)、[System v1.7](design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx)、[Functional v1.8](design/doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx)。
+- **正式產品來源**：[Bible B01–B21](build/BACKLOG.md)、[Business v1.2](design/doc/CAKAMI_Business_Proposal_v1.2_MVP_Aligned.md)、[System v1.7](design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx)、[Functional v1.8](design/doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx)。
+- **完整實作參考**：[GUI/UX](design/GUI_UX_SPEC.md)、[Functional](design/FUNCTIONAL_SPEC.md)、[Technical](design/TECHNICAL_SPEC.md)、[Acceptance](test/ACCEPTANCE_SPEC.md)；已定原則直接遵循，PROPOSED／OPEN 細節不可擅自定案。
+- **Coding 排程**：[三 Sprint 總覽](build/SPRINT_PLAN.md) → [S1 本地 AI](build/sprints/SPRINT-01_LOCAL_AI.md) → [S2 真人配對](build/sprints/SPRINT-02_MATCHING.md) → [S3 測試／發布](build/sprints/SPRINT-03_RELEASE.md)。
+
+**從 B01 開始 Coding；不額外需要 Sprint Activation／GUI High-fi。** Phase 1 禁用 Cloud AI；Day 1 保留 Android／iOS 共用架構。未有真機測試或 Server Evidence，不可宣稱 B-ID 已 PASS。
