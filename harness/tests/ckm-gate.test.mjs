@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, dirname } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -59,12 +59,12 @@ test('HOLD 狀態：只有治理文件的 PR 可以通過',()=>withFixture(f=>{
   const r=f.run('治理：新增文件');
   assert.equal(r.status,0,r.stderr);
 }));
-test('HOLD 狀態：程式修改必須被阻擋',()=>withFixture(f=>{
+test('HOLD 治理狀態：提醒但不阻擋合法 Coding',()=>withFixture(f=>{
   f.w('build/app/index.ts','export const app = true;');
   f.commit();
   const r=f.run();
-  assert.equal(r.status,1,r.stdout);
-  assert.match(r.stderr,/Implementation HOLD/);
+  assert.equal(r.status,0,r.stderr);
+  assert.match(r.stdout,/Policy 標記 HOLD/);
 }));
 test('B01 ACTIVE：授權路徑與標題吻合才可過 Gate',()=>withFixture(f=>{
   f.policy.current_task='B01';f.policy.implementation_enabled=true;f.task.status='ACTIVE';
@@ -74,14 +74,14 @@ test('B01 ACTIVE：授權路徑與標題吻合才可過 Gate',()=>withFixture(f=
   const r=f.run();
   assert.equal(r.status,0,r.stderr);
 }));
-test('B01 ACTIVE：跨 Task 範圍寫入拒絕',()=>withFixture(f=>{
+test('B01 ACTIVE：跨 Task 範圍寫入只提醒，不造成治理死鎖',()=>withFixture(f=>{
   f.policy.current_task='B01';f.policy.implementation_enabled=true;f.task.status='ACTIVE';
   f.savePolicy();f.saveTask();
   f.w('src/other-task.ts','export const x = true;');
   f.commit();
   const r=f.run();
-  assert.equal(r.status,1,r.stdout);
-  assert.match(r.stderr,/未授權的程式修改路徑/);
+  assert.equal(r.status,0,r.stderr);
+  assert.match(r.stdout,/Task 範圍之外/);
 }));
 test('Phase 1：雲端 AI API 呼叫不得通過',()=>withFixture(f=>{
   f.policy.current_task='B01';f.policy.implementation_enabled=true;f.task.status='ACTIVE';
@@ -92,13 +92,30 @@ test('Phase 1：雲端 AI API 呼叫不得通過',()=>withFixture(f=>{
   assert.equal(r.status,1,r.stdout);
   assert.match(r.stderr,/No Cloud AI/);
 }));
-test('程式與 Bible 同 PR 修改被拒絕',()=>withFixture(f=>{
+test('程式與 Bible 同 PR 修改提醒人工 Review、不鎖住 CI',()=>withFixture(f=>{
   f.policy.current_task='B01';f.policy.implementation_enabled=true;f.task.status='ACTIVE';
   f.savePolicy();f.saveTask();
   f.w('build/app/index.ts','export const ok = true;');
   f.w('build/BACKLOG.md','# 私自改 Bible\n');
   f.commit();
   const r=f.run();
+  assert.equal(r.status,0,r.stderr);
+  assert.match(r.stdout,/請在 Review 時人工確認/);
+}));
+
+test('未啟動 Task 的情況下，仍可開發 iOS／Android 共用核心',()=>withFixture(f=>{
+  f.policy.implementation_enabled=true;
+  f.savePolicy();
+  f.w('build/core/shared.ts','export const platform = "cross-platform";');
+  f.commit();
+  const r=f.run('共用核心');
+  assert.equal(r.status,0,r.stderr);
+}));
+test('真正違反 No Cloud AI 原則仍會 FAIL',()=>withFixture(f=>{
+  f.policy.phase_1_cloud_ai_allowed=true;
+  f.savePolicy();
+  f.commit();
+  const r=f.run('違反產品原則');
   assert.equal(r.status,1,r.stdout);
-  assert.match(r.stderr,/不可同時修改 Bible/);
+  assert.match(r.stderr,/Phase 1 必須禁止雲端 AI/);
 }));
