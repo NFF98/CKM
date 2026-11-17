@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "repository": "NFF98/CKM",
+  "agent_model": "SINGLE_CHATGPT_AGENT",
+  "product_authority": [
+    "build/BACKLOG.md",
+    "design/doc/CAKAMI_Business_Proposal_v1.2_MVP_Aligned.md",
+    "design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx",
+    "design/doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx"
+  ],
+  "current_task": null,
+  "implementation_enabled": true,
+  "phase_1_cloud_ai_allowed": false,
+  "implementation_roots": [
+    "build/app/",
+    "build/core/",
+    "build/mobile/",
+    "build/cloud/",
+    "app/",
+    "core/",
+    "mobile/",
+    "cloud/",
+    "src/",
+    "src-tauri/",
+    "supabase/"
+  ],
+  "immutability": [
+    "build/BACKLOG.md",
+    "AGENTS.md",
+    "design/doc/"
+  ],
+  "explanation": "使用者已核准 PR #4，允許開始 CKM 開發。沒有強制 Sprint/Task Activation 或額外 Governance PR；Task 管理僅供追溯。CI 的治理建議不會阻斷 Coding；Cloud AI 明顯違規仍為 FAIL。",
+  "governance_checks_block_coding": false
+}

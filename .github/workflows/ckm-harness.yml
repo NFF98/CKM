@@ -1,0 +1,28 @@
+name: CKM Harness
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Harness regression tests
+        run: node --test harness/tests/ckm-gate.test.mjs
+      - name: Safety guard + advisory governance
+        env:
+          CKM_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CKM_PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node harness/scripts/ckm-gate.mjs
+      - name: Explain Gate
+        run: |
+          echo "此 Gate 只進行靜態治理檢查。"
+          echo "B01 Android 真機／Rust Bridge、B03 E2B、B19 測試需要另附 Evidence。"
