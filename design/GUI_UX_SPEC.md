@@ -6,6 +6,13 @@
 > **引用 APPf2 而不繼承產品功能**：APPf2 SSOT https://github.com/NFF98/appf2-design/blob/main/SSOT.md；APPf2 GUI Design System https://github.com/NFF98/appf2-design/blob/main/working/detailed-design/UI-UX/DESIGN-SYSTEM.md；APPf2 Screen Inventory https://github.com/NFF98/appf2-design/blob/main/working/detailed-design/UI-UX/PHASE1-SCREEN-INVENTORY.md。  
 > 主 UI 文案使用繁體中文；日文學習內容保留日文。尚未批准任何語言切換機制。
 
+## 已核准的 Phase 1 邊界：不使用雲端 AI（2026-11-17）
+
+- **使用者明確決策**：Phase 1 MVP 不使用任何雲端 AI 推理。OCR、E2B 圖片／文字理解、意圖候選與必要語意特徵產生，必須在使用者裝置本地執行。
+- GUI 不可出現「切換雲端 AI」「使用雲端模型再試一次」等入口；本地模型失敗時如實顯示，提供人工修正／保存本地的操作，不得偷偷改用 Cloud AI。
+- **雲端資料服務仍存在**：使用者明確同意後，雲端可用於登入、已授權配對資料、資料庫查詢／比對、邀請與聊天；它們不是雲端模型推理。
+- 此條為 User 已定的產品原則；其餘 GUI 畫面細節仍為 DRAFT。
+
 ## 1. 規格歸屬與鎖定方法
 
 - **已確定（SOURCE）**：使用者 Drop → 本地內容辨識 → 親自確認 Goal → 預覽授權 → 找真人 → 必要追問 → 雙方同意 → Chat／15 分鐘練習 → 雙方確認結果。最多 8 個同時有效 Matching Concepts；每次最多 3 題主動追問（含 Goal 確認）；Pair-only 最多 2 題；無候選有 S04a；原圖／OCR 不自動上傳。
