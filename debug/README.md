@@ -1,12 +1,15 @@
-# Debug
+# CAKAMI｜除錯工作區
 
-Log reproducible bugs without personal data.
+此資料夾記錄可重現的問題、原因分析與修正驗證，**不存放真實使用者私人資料**。
 
-Issue template:
-- Device / Android version / build commit
-- Screen ID (S01–S09), steps to reproduce, expected vs actual
-- Sanitized sample input and relevant error code
-- Severity, suspected layer (Tauri / Rust / local model / SQLite / cloud)
-- Fix commit, regression test, verification status
+## 問題紀錄格式
 
-Do not commit raw OCR, private photos, auth tokens, private chats or GPS coordinates.
+- **裝置環境：** 型號、Android 版本、App 版本或 Commit。
+- **畫面位置：** S01–S09／S04a。
+- **重現步驟：** 使用可公開的合成輸入說明問題。
+- **預期與實際結果：** 說清楚出錯的行為。
+- **影響與緊急度：** 是否阻擋 P0 及真人測試。
+- **疑似模組：** Tauri、Rust、E2B／OCR、SQLite 或雲端。
+- **修正與驗證：** 對應 Commit、回歸測試與結果。
+
+不得提交原始 OCR、私人圖片、帳號 Token、聊天內容或精確位置。所有報告一律使用繁體中文。
