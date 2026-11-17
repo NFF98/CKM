@@ -8,7 +8,14 @@
 - [System Design v1.7](doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx)：8-Parameter、Rust／SQLite 驗證、Matching Algorithm。
 - [Functional Design v1.8](doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx)：S01–S09 畫面、功能對照、外部／內部 Sequence Diagram。
 
-**實作任務統一管理於 [Build Backlog](../build/BACKLOG.md)。** 先確認依賴與驗收，再安排 Sprint。
+## 已合併至 main 的 Coding 詳細參考
+
+- [GUI／UX Spec](GUI_UX_SPEC.md)：Android／iOS 共用畫面行為、S01–S09／S04a、Code-first GUI。
+- [Functional Spec](FUNCTIONAL_SPEC.md)：逐畫面的可觀察行為、Intent／Consent／Matching／Session Gate。
+- [Technical Spec](TECHNICAL_SPEC.md)：Rust／SQLite、裝置端 OCR／E2B、Supabase 資料契約與信任邊界。
+- [Acceptance Spec](../test/ACCEPTANCE_SPEC.md)：B01–B21、T01–T13、E2E、P0 Evidence。
+
+**實作唯一總表：[Build Bible B01–B21](../build/BACKLOG.md)。** 要開工時先查 [Spec↔Sprint↔Test 追溯矩陣](../build/TRACEABILITY.md) 及 [三 Sprint 計畫](../build/SPRINT_PLAN.md)。四份規格的 SOURCE 與已明確確認的原則可作依據；PROPOSED／OPEN 不代表已被使用者批准。Coding 可直接進行，不需整份文件 Freeze。
 
 如需修改設計，應註記影響的畫面、參數規則、權限、資料流及測試項目，避免 Business、System、Functional 三份文件互相矛盾。
 
