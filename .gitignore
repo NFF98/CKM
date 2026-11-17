@@ -1,0 +1,39 @@
+# Secrets / credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.keystore
+*.jks
+*.mobileprovision
+*.key
+
+# Local user content / databases
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+uploads/
+user-data/
+private/
+models/
+*.gguf
+*.task
+
+# Node / TypeScript / Tauri / Rust
+node_modules/
+dist/
+build-output/
+target/
+src-tauri/target/
+.tauri/
+*.log
+*.tmp
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
