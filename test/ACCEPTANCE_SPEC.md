@@ -5,6 +5,14 @@
 > 唯一 Build Backlog：../build/BACKLOG.md；測試基準：../design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx §15.5／§16.5 的 T01–T13、Functional v1.8 的四道 Gate；GUI Draft：../design/GUI_UX_SPEC.md；Technical Draft：../design/TECHNICAL_SPEC.md。  
 > **SOURCE** 表示已由設計鎖定的必測行為；其餘 Test Case IDs 與 Test Mechanism 是提案，需批准後方為正式驗收矩陣。**未執行 ≠ 通過**。
 
+## 已核准驗收紅線：Phase 1 不使用雲端 AI（2026-11-17）
+
+- 所有 OCR、E2B、AI 提議、Embedding 生成（若有）必須在 Android 裝置本地完成；禁止遠端推理與失敗時 Cloud AI fallback。
+- **追加測試 AI-LOCAL-01（B03／B13／B19）**：Android 斷網後可對已安裝且已準備好的本地模型完成 OCR／E2B 推論；必須記錄實際使用的 runtime／模型，不能拿靜態假結果代替。
+- **追加測試 AI-LOCAL-02（B03／B12／B19）**：模型故障／超時／無法載入時，監控網路與伺服器端日誌，確認沒有轉呼叫任何外部 OCR／LLM／VLM／Embedding 服務；UI 明示失敗並允許人工修正。
+- **追加測試 AI-LOCAL-03（B11–B13／B19）**：Cloud API／Supabase 僅處理已授權 Payload、資料庫查詢／向量距離／邀請與聊天，不在 Server 或 Edge Function 呼叫模型推論；本地產生的 Embedding 若要上傳，必須有明確 Consent。
+- 以上測試目前均為 **NOT_RUN**，不宣稱模型已在 Android 驗證。
+
 ## 1. Done 的唯一判準
 
 每個 B-ID 須同時具備：
