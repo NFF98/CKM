@@ -6,7 +6,7 @@
 
 **[MVP Build Backlog（B01–B21）](BACKLOG.md)** 是建置優先順序及驗收規範的唯一清單。
 
-**使用者已決定將 B01–B21 分為三個 Sprint。** 開發與驗收請由 [三 Sprint 執行總覽](SPRINT_PLAN.md) 進入，再查看 [Sprint 1／B01–B09](sprints/SPRINT-01_LOCAL_AI.md)、[Sprint 2／B10–B18](sprints/SPRINT-02_MATCHING.md)、[Sprint 3／B19–B21](sprints/SPRINT-03_RELEASE.md)。分期不更動 [Bible](BACKLOG.md) 原有功能、依賴或 P0/P1；不需每個 Sprint 再次批准才可 Coding。
+**使用者已決定將 B01–B21 分為三個 Sprint。** Coding 前先開 [21 項規格追溯矩陣](TRACEABILITY.md)，對照 [GUI Spec](../design/GUI_UX_SPEC.md)／[Functional Spec](../design/FUNCTIONAL_SPEC.md)／[Technical Spec](../design/TECHNICAL_SPEC.md)／[Acceptance Spec](../test/ACCEPTANCE_SPEC.md)。 開發與驗收請由 [三 Sprint 執行總覽](SPRINT_PLAN.md) 進入，再查看 [Sprint 1／B01–B09](sprints/SPRINT-01_LOCAL_AI.md)、[Sprint 2／B10–B18](sprints/SPRINT-02_MATCHING.md)、[Sprint 3／B19–B21](sprints/SPRINT-03_RELEASE.md)。分期不更動 [Bible](BACKLOG.md) 原有功能、依賴或 P0/P1；不需每個 Sprint 再次批准才可 Coding。
 
 ## 設計依據
 
