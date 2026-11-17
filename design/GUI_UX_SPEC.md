@@ -1,6 +1,6 @@
-# CAKAMI｜GUI / UX 詳細規格（審核草案）
+# CAKAMI｜GUI / UX 詳細參考規格（Code-first）
 
-> **狀態：DRAFT／待 Human Review，未 LOCKED、未授權開始 Coding。**  
+> **狀態：可作為 Coding 參考；標示 SOURCE／已確認的原則可直接遵循，PROPOSED／OPEN 尚未核准，不得當成既定產品規則。Coding 已獲授權，不需 GUI Freeze。**  
 > 日期：2026-11-17；範圍：Android-first，S01–S09、S04a；對應 Bible：B01–B04、B07–B09、B12–B18、B19、B21。  
 > 規格優先級：CKM build/BACKLOG.md + Business v1.2／System v1.7／Functional v1.8；本文件只補畫面呈現與互動細節。若文字改變產品行為，必須先決策並同步正式設計。  
 > **引用 APPf2 而不繼承產品功能**：APPf2 SSOT https://github.com/NFF98/appf2-design/blob/main/SSOT.md；APPf2 GUI Design System https://github.com/NFF98/appf2-design/blob/main/working/detailed-design/UI-UX/DESIGN-SYSTEM.md；APPf2 Screen Inventory https://github.com/NFF98/appf2-design/blob/main/working/detailed-design/UI-UX/PHASE1-SCREEN-INVENTORY.md。  
@@ -17,7 +17,7 @@
 
 - **已確定（SOURCE）**：使用者 Drop → 本地內容辨識 → 親自確認 Goal → 預覽授權 → 找真人 → 必要追問 → 雙方同意 → Chat／15 分鐘練習 → 雙方確認結果。最多 8 個同時有效 Matching Concepts；每次最多 3 題主動追問（含 Goal 確認）；Pair-only 最多 2 題；無候選有 S04a；原圖／OCR 不自動上傳。
 - **本文件提案（PROPOSED）**：畫面版型、具體按鈕位置、提示語、返回策略、狀態呈現、元件樣式。可以用來審核與製作 Low-fi，但不可當成已批准的實作事實。
-- **未定（DECISION REQUIRED）**：第 6 節 D-UX-*；在 Human 確認前，不讓 Coding Agent 自行決定。
+- **未定（DECISION REQUIRED）**：第 6 節 D-UX-*。可先開發不受影響的部分；涉及未定產品行為、隱私或安全的部分，實作定案前再由 Human 決定，不建立全專案 Coding HOLD。
 - 遵循 APPf2 的分工：GUI 文件擁有 composition／visual hierarchy／responsive／presentation；功能行為由 CAKAMI Functional Contract 擁有；System v1.7 擁有資料、授權與安全。APPf2 畫面 S01–S06 是另一產品，**不映射 CAKAMI 的 S 編號**。
 - **已由 User 決定（2026-11-17）**：MVP 採 **Code-first GUI**；不製作、不要求 High-fi PNG／視覺 Mockup 作為 Coding 或驗收 Gate。每頁只先確認基本操作與重要狀態 → 共用 Design System → 直接實作 Android 可操作畫面 → 真機 Cross-screen／Functional／Privacy 驗收。APPf2 的 High-fi 圖只供設計語言參考，不當作 CAKAMI 的交付物。
 
@@ -157,7 +157,7 @@ S09 A 確認 + B 確認 + 有效時長
 - S04a 說明「目前沒有符合條件的真人」，不得模擬候選卡。
 - S06 每次聚焦一個對配對有用的問題，顯示「不確定／稍後再說」的合法處理；不能為了湊問題數而追問。
 
-## 6. 開發前必須決定的 GUI 問題（Open Decisions）
+## 6. 受影響功能定案前才需決定的 GUI 問題（Open Decisions）
 
 | ID | 尚未鎖定 | 影響 |
 |---|---|---|
@@ -180,7 +180,7 @@ S09 A 確認 + B 確認 + 有效時長
 | GUI-G02 | 共用 Component／Token 審核 | 字級、色彩、觸控、互動狀態一致 |
 | GUI-G03 | 逐頁 Android 實機操作／畫面證據 | 空、載入、錯誤、離線、封鎖／過期／撤銷狀態有呈現；**不要求 High-fi** |
 | GUI-G04 | Cross-screen / Functional / Privacy Audit | 無前後矛盾、無未授權揭露、S07–S09 Gate 正確 |
-| GUI-G05 | Human Approval + Git commit reference | 審核後才改標 LOCKED；未批准不能聲稱已經 GUI Freeze |
+| GUI-G05 | 產品／隱私／安全行為變更的人類確認 + Commit | 只對需要 Human Product Decision 的變更要求確認；**不是全 App 的 GUI Freeze 或 Coding Gate** |
 
 ## 8. 追溯與後續動作
 
