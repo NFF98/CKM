@@ -1,0 +1,50 @@
+name: B01 App (TypeScript + Rust)
+on:
+  pull_request:
+    paths:
+      - 'build/app/**'
+      - '.github/workflows/b01-app.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'build/app/**'
+      - '.github/workflows/b01-app.yml'
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    name: B01 TypeScript tests and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: build/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript typecheck
+        run: npm run check
+      - name: Bridge contract unit tests
+        run: npm test
+      - name: Vite build
+        run: npm run build
+
+  rust:
+    name: B01 Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux Tauri system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: build/app/src-tauri
+      - name: Rust B01 unit tests
+        run: cargo test --manifest-path build/app/src-tauri/Cargo.toml --lib
