@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "repository": "NFF98/CKM",
+  "agent_model": "SINGLE_CHATGPT_AGENT",
+  "product_authority": [
+    "build/BACKLOG.md",
+    "design/doc/CAKAMI_Business_Proposal_v1.2_MVP_Aligned.md",
+    "design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx",
+    "design/doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx"
+  ],
+  "current_task": null,
+  "implementation_enabled": false,
+  "phase_1_cloud_ai_allowed": false,
+  "implementation_roots": [
+    "build/app/",
+    "build/core/",
+    "build/mobile/",
+    "build/cloud/",
+    "app/",
+    "core/",
+    "mobile/",
+    "cloud/",
+    "src/",
+    "src-tauri/",
+    "supabase/"
+  ],
+  "immutability": [
+    "build/BACKLOG.md",
+    "AGENTS.md",
+    "design/doc/"
+  ],
+  "explanation": "由 Human 審核開工及規格變更；ChatGPT 同時負責規劃／Coding／自測，CI 負責可重現的獨立機器檢查。B01 啟動時另以 PR 明確修改 current_task 與 implementation_enabled。"
+}
