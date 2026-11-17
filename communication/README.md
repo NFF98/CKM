@@ -1,9 +1,14 @@
-# Communication
+# CAKAMI｜溝通工作區
 
-Product decisions and progress live here:
-- **Decision:** what changed, why, impacted S01–S09 screens, test and rollout implications.
-- **Sprint update:** completed / blocked / next.
-- **Release note:** user-visible changes, known limits and rollback.
-- **Handover:** entry points and how to reproduce tests.
+**最重要的規則：[CKM 繁體中文溝通原則](COMMUNICATION_RULES.md)。**
 
-Do not store confidential investor conversations, user contact information or private chat histories in this public repo.
+使用者可以用英文提出需求；**所有回覆、文件、Issues、PR、Code Review、進度、測試、除錯及發布溝通，一律以繁體中文撰寫**。程式識別字、套件名稱、命令與逐字引用可保留原文。
+
+此資料夾將整理：
+
+- **決策紀錄：** 決定了什麼、原因、影響哪些 S01–S09 功能及驗收項目。
+- **開發進度：** 完成事項、待解問題、下一步、對應 Backlog ID。
+- **版本說明：** 使用者可見變更、已知限制、回滾方法。
+- **交接紀錄：** 重要入口、測試方式與未完成風險。
+
+不得將私人投資往來、使用者聯絡資訊或聊天紀錄公開提交至 Repository。
