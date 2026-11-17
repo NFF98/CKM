@@ -12,7 +12,7 @@
 - **本文件提案（PROPOSED）**：畫面版型、具體按鈕位置、提示語、返回策略、狀態呈現、元件樣式。可以用來審核與製作 Low-fi，但不可當成已批准的實作事實。
 - **未定（DECISION REQUIRED）**：第 6 節 D-UX-*；在 Human 確認前，不讓 Coding Agent 自行決定。
 - 遵循 APPf2 的分工：GUI 文件擁有 composition／visual hierarchy／responsive／presentation；功能行為由 CAKAMI Functional Contract 擁有；System v1.7 擁有資料、授權與安全。APPf2 畫面 S01–S06 是另一產品，**不映射 CAKAMI 的 S 編號**。
-- 每個畫面依序審核：Low-fi（結構與操作）→ 共用 Design System → High-fi → Cross-screen consistency → Human approval。APPf2 的已批准畫面、logo 與 APPf2 功能不能直接當成 CAKAMI 的已批准高保真畫面。
+- **已由 User 決定（2026-11-17）**：MVP 採 **Code-first GUI**；不製作、不要求 High-fi PNG／視覺 Mockup 作為 Coding 或驗收 Gate。每頁只先確認基本操作與重要狀態 → 共用 Design System → 直接實作 Android 可操作畫面 → 真機 Cross-screen／Functional／Privacy 驗收。APPf2 的 High-fi 圖只供設計語言參考，不當作 CAKAMI 的交付物。
 
 ## 2. 從 APPf2 參考的視覺共用原則（PROPOSED FOR CKM）
 
@@ -65,7 +65,7 @@
 
 > **畫面功能邊界不可偷改**：S02 不能把辨識結果自動變成已確認 Goal；S03 不能把未授權欄位預設公開；S05 不可顯示模型捏造的人；S08 在雙方接受前不可開放；S09 不得以單方點擊計為完成。
 
-## 5. 文字 Low-fi Wireframe（第一輪提案，尚非 High-fi）
+## 5. 簡單文字示意（非獨立設計交付物；實際 Android App 才是 GUI 驗收對象）
 
 ### S01 — Drop
 ~~~text
@@ -163,15 +163,15 @@ S09 A 確認 + B 確認 + 有效時長
 | D-UX-07 | 候選卡可公開的使用者欄位（稱呼、學習程度、上線時段等） | B11–B14／隱私 |
 | D-UX-08 | S08 計時區、背景／離開 App 時的顯示及重返狀態 | B17–B18 |
 | D-UX-09 | S09 未完成／No-show 的顯示措辭與避免誤觸策略 | B18 |
-| D-UX-10 | Android 360／393／412px 宽度下的 High-fi 版型與實體裝置清單 | B19／B21 |
+| D-UX-10 | Android 360／393／412px 寬度下的**實際 App** 佈局與真機裝置清單（不做 High-fi） | B19／B21 |
 
 ## 7. GUI Review 與驗收 Gate
 
 | Gate | 證據 | 通過要求 |
 |---|---|---|
-| GUI-G01 | S01–S09、S04a Low-fi 與轉場核對 | 無缺頁、無斷線、主 CTA 有清楚去向 |
+| GUI-G01 | S01–S09、S04a 在**可操作 App** 的轉場核對 | 無缺頁、無斷線、主 CTA 有清楚去向 |
 | GUI-G02 | 共用 Component／Token 審核 | 字級、色彩、觸控、互動狀態一致 |
-| GUI-G03 | 逐頁 High-fi 畫面與狀態圖 | 空、載入、錯誤、離線、封鎖／過期／撤銷狀態有呈現 |
+| GUI-G03 | 逐頁 Android 實機操作／畫面證據 | 空、載入、錯誤、離線、封鎖／過期／撤銷狀態有呈現；**不要求 High-fi** |
 | GUI-G04 | Cross-screen / Functional / Privacy Audit | 無前後矛盾、無未授權揭露、S07–S09 Gate 正確 |
 | GUI-G05 | Human Approval + Git commit reference | 審核後才改標 LOCKED；未批准不能聲稱已經 GUI Freeze |
 
@@ -181,4 +181,4 @@ S09 A 確認 + B 確認 + 有效時長
 - 資料／介面細節：design/TECHNICAL_SPEC.md。
 - 驗收測試：test/ACCEPTANCE_SPEC.md。
 - 正式工作清單：build/BACKLOG.md。
-- **目前沒有 approved CAKAMI Wireframe PNG／High-fi 圖片；上方文字框線只供第一輪 GUI 審核，不得宣稱已完成設計。**
+- **MVP 不需要 approved Wireframe PNG／High-fi 圖片**。上方文字框線為實作溝通輔助；真正的 GUI Done 以 Android 可操作畫面 + 功能／隱私／無障礙測試證據為準。
