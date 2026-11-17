@@ -1,6 +1,6 @@
-# CAKAMI｜技術介面與資料契約（審核草案）
+# CAKAMI｜技術介面與資料契約（Coding 參考規格）
 
-> **狀態：DRAFT／PROPOSED，未 LOCKED、未部署、未經真機驗證。**  
+> **狀態：可供 Coding 參考；技術簽章／DDL 屬 PROPOSED，未部署且未經真機驗證。既有 SOURCE／已核准原則不可因為提案而被改寫；不要求全部介面先 Freeze 才能 Coding。**  
 > 日期：2026-11-17；範圍：Phase 1 Android First；B01–B18 的工程契約及 B19–B21 驗收證據入口。  
 > 正式來源：../build/BACKLOG.md；doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx（§2、§3、§4–5、§7–8、§15–16）；doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx。  
 > 本文件不變更技術骨架。**所有尚未由現有設計明確定義的具體名稱、欄位、路徑、函式簽章均為可審核提案，不能以文件存在當作已批准。**
@@ -222,7 +222,7 @@ Server-revalidated ACTIVE Intent + Consent + expiry + current version
 - Android：真機 S01–S09 + S04a、離線／中斷／回歸；記錄 E2B 速度、RAM、電池。
 - Release：所有 P0 Gate PASS 才允許 B21 Android Pilot；B20 是 P1 且需可重現 Benchmark，不把真實用戶成效未取得的資料偽造成已通過。
 
-## 8. 開工前必須批准的 Engineering Decisions
+## 8. 只在影響相應功能時才需確認的 Engineering Decisions
 
 | 決策 | 必須拿到的答案／Evidence | 影響 |
 |---|---|---|
@@ -236,7 +236,7 @@ Server-revalidated ACTIVE Intent + Consent + expiry + current version
 | T-08 Android AI | E2B 模型版本、格式、量化、runtime、設備最低規格 | B01–B03／B21 |
 | T-09 Interface | 正式命名的 typed command／Cloud route／error enum／idempotency | B01–B18 |
 
-**Freeze Procedure**：先核對 v1.7／v1.8 是否已定義；未定義的整理成 Human Decision，不得由模型自行補「已核准」；批准後更新本文件與受影響來源／測試，留下精確 Git Commit。沒有真機 Spike 不可把 T-08 標為已驗證。
+**決策處理**：先核對 v1.7／v1.8 是否已定義；只有真的牽涉產品行為、隱私或安全之未決事項才交 Human 決策，技術內部細節由 Coding Agent 提案並測試。決策後更新本文件與受影響來源／測試，留下 Commit。**不得以此流程對其他不受影響 Coding 設全局 HOLD。** 沒有真機 Spike 不可把 T-08 標為已驗證。
 
 ## 9. 文件責任
 
