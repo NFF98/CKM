@@ -5,6 +5,16 @@
 > 正式來源：../build/BACKLOG.md；doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx（§2、§3、§4–5、§7–8、§15–16）；doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx。  
 > 本文件不變更技術骨架。**所有尚未由現有設計明確定義的具體名稱、欄位、路徑、函式簽章均為可審核提案，不能以文件存在當作已批准。**
 
+## 已核准的 Phase 1 架構紅線：NO CLOUD AI
+
+**User 決策日期：2026-11-17。** Phase 1 MVP 的 AI 推論必須全部在裝置本地處理。以下為 Coding 與驗收的硬限制：
+
+- **禁止**：外部 LLM／VLM／OCR／Embedding API（例如 OpenAI、Gemini、Anthropic 或託管的 AI 服務）、雲端 Agent／模型推論、E2B 失敗自動 fallback 至 Cloud AI、雲端生成配對解釋或個人特徵。
+- **允許**：以 Supabase Auth、PostgreSQL／pgvector、RLS、受控 RPC／Edge Function（**僅限一般規則與資料操作，不能呼叫 AI 模型**）、Realtime／Chat 實現多人合作；SQL／pgvector 的向量距離與硬條件運算屬資料庫計算，不是 AI 模型推論。
+- **Embedding 規則**：若 B13 需要向量，必須在手機本地用已核准的本地模型產生；**禁止由雲端 API 產生向量**。只有使用者明確授權時才傳必要特徵；Embedding 也不是天然匿名。
+- **模型不能跑時**：明確回報 MODEL_UNAVAILABLE／相關錯誤並提供人工修正，禁止暗中上傳圖片或文字給雲端 AI；不能把手動流程假算為 B03 本地 AI PASS。
+- **仍待驗證**：本地 E2B 模型版本與運行環境、是否需要獨立本地 Embedding 模型、Android 記憶體與效能。不可把「本地 AI 原則已定」等同「本地 AI 技術已驗證」。
+
 ## 1. 層級責任與信任邊界（SOURCE）
 
 ~~~text
