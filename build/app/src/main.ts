@@ -6,7 +6,6 @@ import {
   listDrops,
   saveImage,
   saveText,
-  type DropSummary,
   type ImageSource,
 } from "./platform/local-drops";
 import "./styles.css";
