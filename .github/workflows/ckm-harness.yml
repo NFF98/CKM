@@ -12,6 +12,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Harness regression tests
+        run: node --test harness/tests/ckm-gate.test.mjs
       - name: Governance + Scope + No Cloud AI guard
         env:
           CKM_BASE_SHA: ${{ github.event.pull_request.base.sha }}
