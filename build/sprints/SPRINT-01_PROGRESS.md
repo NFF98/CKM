@@ -4,7 +4,7 @@
 
 | Task | 開發狀態 | 測試狀態 | 目前能客觀證明的交付／下一步 |
 |---|---|---|---|
-| **B01** | IN_PROGRESS | Android 真機 NOT_RUN | PR #6：Tauri TypeScript 畫面、Rust Command、平台 Adapter、Unit Tests；TS Typecheck／5 Tests／Vite Build PASS；Rust 3/3 Unit Tests PASS；APK Build IN_PROGRESS；Android 真機仍 NOT_RUN |
+| **B01** | IN_PROGRESS | Android 啟動＋Bridge：使用者回報成功；飛航模式 NOT_RUN | PR #6：TS／Rust Unit Tests PASS，Android APK 成功打包。使用者回報 Android 0.1.0 上可顯示 `Rust Bridge 已回應`、`平台：android`。未有飛航模式／adb 日誌；S1-AC01 尚未全部 PASS。 |
 | B02 | NOT_STARTED | NOT_RUN | 選圖／拍照／文字 Drop、本地保存 |
 | B03 | NOT_STARTED | NOT_RUN | 真機本地 OCR／Gemma E2B；最大技術風險 |
 | B04 | NOT_STARTED | NOT_RUN | 內容 ≠ Goal |
@@ -22,4 +22,4 @@
 - Android ARM64 Debug APK：[APK Smoke Workflow](https://github.com/NFF98/CKM/actions/workflows/b01-android-apk.yml) 已建立；曾因同一個 PNG 問題失敗，修正後 [Run #44024584452](https://github.com/NFF98/CKM/actions/runs/44024584452) 正在打包。**尚未確認 APK 可安裝**。
 - Android 實體裝置離線 UI↔Rust 驗收：**NOT_RUN**；無硬體 Evidence，不可把雲端 CI 算成真機 PASS。
 
-**規則**：每次繼續 Sprint 1，先看此表與最新 PR，從未完成的 AC 續做；遇到真機環境不足要標 NOT_RUN／BLOCKED，不得把 Harness CI 綠燈算成 Android 功能完成。
+**2026-11-17 使用者實測回報**：在 Android 裝置上看到 `Rust Bridge 已回應`，平台 `android`、版本 `0.1.0`、`雲端 AI：禁用`、`本地 AI：尚未接入`。此證據支援實機啟動與 Rust Bridge 功能；尚未驗證飛航模式，所以不能說 B01 全部驗收完成。後續 B02 以獨立堆疊 PR 實作。\n\n**規則**：每次繼續 Sprint 1，先看此表與最新 PR，從未完成的 AC 續做；遇到真機環境不足要標 NOT_RUN／BLOCKED，不得把 Harness CI 綠燈算成 Android 功能完成。
