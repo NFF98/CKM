@@ -1,15 +1,19 @@
-# Build
+# Build — CAKAMI MVP
 
-Production code goes here after the architecture is scaffolded.
+**Current state: planning, no implementation yet.**
 
-Planned subfolders when implementation starts:
-- `app/`: Tauri v2 + TypeScript UI and mobile UI
-- `core/`: Rust parameter controller and matching/quality logic
-- `mobile/`: Android native bridges for local OCR / E2B (only as needed)
-- `cloud/`: API, migrations and allowed intent sync
+**Start here:** [Build Backlog — B01–B21](BACKLOG.md). This is the single prioritized implementation queue. **There are no assigned Sprints yet.**
 
-**Sprint plans**:
-- [Sprint 01 — Local Intent Core](sprints/SPRINT-01.md)
-- [Sprint 02 — Matching to Completed Session](sprints/SPRINT-02.md)
+## Inputs (canonical design sources)
 
-Use lockfiles and pin dependencies when code is added. No secrets in commits.
+- [Business Proposal v1.2](../design/doc/CAKAMI_Business_Proposal_v1.2_MVP_Aligned.md)
+- [System Design v1.7](../design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx)
+- [Functional Design v1.8](../design/doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx)
+
+Future code layout, when implementation starts:
+- `app/` — Tauri v2 + TypeScript UI
+- `core/` — Rust parameter validator, slot guard and question/matching logic
+- `mobile/` — native OCR / on-device model bridge
+- `cloud/` — API, schema/migrations, consent-based matching/chat
+
+Only implement after checking the relevant screen mapping, privacy boundaries, safety gates and acceptance tests in `BACKLOG.md`. Lock dependency versions and never commit API secrets.
