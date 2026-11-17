@@ -5,6 +5,13 @@
 > 正式來源：../build/BACKLOG.md（B01–B21）；doc/CAKAMI_Business_Proposal_v1.2_MVP_Aligned.md；doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx（尤其 §3、§8、§15–16）；doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx。  
 > 用法：**SOURCE** 代表有正式來源的既有規則；**PROPOSED** 代表有待批准的細節；**OPEN** 代表仍須 Human 決策。不得把 DRAFT 當成最新已核准 Product Truth。
 
+## 已核准的 Phase 1 原則：所有 AI 在手機本地執行
+
+- 2026-11-17 User 明確決定：**Phase 1 MVP 完全不使用雲端 AI**，包含遠端 OCR、雲端 LLM／VLM、雲端 Embedding 生成、AI Agent 服務及失敗時偷轉 Cloud AI。
+- 影像／文字理解、Goal／Concept 候選與必要 AI 特徵生成均在裝置執行。模型無法運作時，只能如實提示並允許人工修正／保存私人內容；不得將這種 fallback 宣稱已符合 B03 本地 AI 驗收。
+- Supabase／PostgreSQL 的非模型服務仍用於經使用者同意的配對資料儲存、搜尋／向量距離運算、身分驗證、邀請、聊天及結果；公開欄位與授權仍以設計規格為準。
+- **此原則已決定**；具體本地 Embedding 模型是否需要、硬體 runtime 與效能仍須技術驗證。
+
 ## 1. 不變的功能邊界（SOURCE）
 
 - 使用者 Drop 圖片／文字，裝置端 OCR／E2B **只提議**內容與意圖候選；Content ≠ Goal／Need／Offer／Consent。
