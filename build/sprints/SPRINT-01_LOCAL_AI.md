@@ -7,6 +7,16 @@
 - **依賴**：以 [Bible B01–B09](../BACKLOG.md) 的逐項依賴為準；B09 需 B05–B07，B08 需 B07。
 - **可見 Demo**：開啟 Android App → 選入含「パクる」的圖片 → 本地 OCR／E2B 呈現理解（不擅自判斷找人）→ 本人設定 N2 練習 Goal → 確認配對概念 → 查看將分享的摘要（**未經同意仍不公開**）。
 
+
+## Coding 前應讀的來源規格
+
+這份 Sprint 只分配 B01–B09 的工作和可驗收輸出。每一項以 [Bible](../BACKLOG.md) 為主，依 [B01–B09 逐項追溯表](../TRACEABILITY.md) 查看：
+[Functional Spec](../../design/FUNCTIONAL_SPEC.md) 的 S01–S03／S06、
+[Technical Spec](../../design/TECHNICAL_SPEC.md) 的 §1–3、
+[GUI Spec](../../design/GUI_UX_SPEC.md) 的 S01–S03、
+[Acceptance Spec](../../test/ACCEPTANCE_SPEC.md) 的 B01–B09／T01–T13／AI-LOCAL。
+**不准只看本頁就 Coding；若本頁與正式規格不一致，先修本頁。**
+
 ## 1. 工作與可操作驗收（AC）
 
 | AC-ID／B-ID | 要做出來的功能 | 具體通過標準／失敗案例 | Evidence |
