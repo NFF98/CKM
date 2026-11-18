@@ -62,11 +62,53 @@ fn delete_drop(app: tauri::AppHandle, id: String) -> Result<bool, String> {
     private_store(&app)?.delete(&id)
 }
 
+/// B03：只接受 Rust 私人 Asset UUID，模型回傳才可寫入 OCR；絕不經遠端 OCR。
+#[tauri::command]
+async fn local_ocr_recognize(
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<local_store::OcrRecord, String> {
+    let detail = private_store(&app)?.load(&id)?;
+    if detail.summary.kind != "image" {
+        return Err("OCR_IMAGE_REQUIRED".into());
+    }
+    let base64 = detail.data_base64.ok_or("ASSET_FILE_MISSING")?;
+    let native = tauri_plugin_cakami_ocr::recognize(&app, base64)?;
+    private_store(&app)?.save_recognition(&id, native)
+}
+
+/// B03：重新開啟 App 時從私有 SQLite 讀回原 OCR 與更正文字。
+#[tauri::command]
+fn load_ocr(app: tauri::AppHandle, id: String) -> Result<local_store::OcrRecord, String> {
+    private_store(&app)?.load_ocr(&id)
+}
+
+/// B03：更正是 UI 真人的明確操作；不代表 Goal／分享／模型確認。
+#[tauri::command]
+fn correct_ocr(
+    app: tauri::AppHandle,
+    id: String,
+    corrected_text: String,
+) -> Result<local_store::OcrRecord, String> {
+    private_store(&app)?.correct_ocr(&id, &corrected_text)
+}
+
+/// E2B 尚未有已驗證可部署的 Gemma Runtime／模型，明確拒絕，絕不使用 Cloud fallback。
+#[tauri::command]
+fn local_model_propose(_app: tauri::AppHandle, _id: String) -> Result<(), String> {
+    Err("MODEL_UNAVAILABLE".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_cakami_ocr::init())
         .invoke_handler(tauri::generate_handler![
             bridge_health,
+            local_ocr_recognize,
+            load_ocr,
+            correct_ocr,
+            local_model_propose,
             save_drop,
             list_drops,
             load_drop,
