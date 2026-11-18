@@ -1,4 +1,5 @@
 mod local_store;
+mod goal_draft;
 mod platform;
 use platform::NativeAdapter;
 use serde::Serialize;
@@ -122,6 +123,28 @@ fn load_model_suggestion(app: tauri::AppHandle, id: String) -> Result<Option<loc
     private_store(&app)?.load_model_suggestion(&id)
 }
 
+/// B04 S1-AC04：讀取僅本人明確確認後才存在的私人 Intent 草稿。
+/// Drop / OCR / E2B 不會寫入此表；未確認時回 None。
+#[tauri::command]
+fn load_private_goal_draft(
+    app: tauri::AppHandle,
+    asset_id: String,
+) -> Result<Option<goal_draft::PrivateGoalDraft>, String> {
+    let root = app.path().app_data_dir().map_err(|_| "STORAGE_UNAVAILABLE".to_string())?;
+    goal_draft::GoalStore::open(&root)?.load(&asset_id)
+}
+
+/// B04：獨立的人類確認操作；Rust 產生 event ID，原子保存為 private draft。
+/// 不接受模型寫入確認事件／分享欄位；不會發佈或啟動配對。
+#[tauri::command]
+fn confirm_private_goal(
+    app: tauri::AppHandle,
+    input: goal_draft::ConfirmGoalInput,
+) -> Result<goal_draft::PrivateGoalDraft, String> {
+    let root = app.path().app_data_dir().map_err(|_| "STORAGE_UNAVAILABLE".to_string())?;
+    goal_draft::GoalStore::open(&root)?.confirm(input)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -136,6 +159,8 @@ pub fn run() {
             import_local_model,
             local_model_propose,
             load_model_suggestion,
+            load_private_goal_draft,
+            confirm_private_goal,
             save_drop,
             list_drops,
             load_drop,
