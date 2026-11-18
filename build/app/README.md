@@ -90,3 +90,15 @@ B03 目前已提交 Rust ↔ Android Kotlin LiteRT-LM ↔ SQLite 的 Coding，�
 - **平台限制**：Android API 26 起允許匯入；iOS／desktop 暫未提供原生 LiteRT-LM Adapter，明確顯示不可用。真機 RAM、CPU 初始化時間、輸出品質尚未驗證。
 - **目前待驗證**：Android Kotlin/Gradle compile-only CI、裝置 SHA256 匯入、首次／再次推論、飛航模式、錯誤 JSON、模型不完整與拒絕載入、離線無外傳、120 秒超時與低 RAM、模型結果／來源與 SQLite 重啟持久化。
 - **批次策略**：這輪不打包、不提供新 APK；維持「至少兩個可驗收功能一起打包一次」原則。Android Gradle 編譯檢查也不會產生 APK Artifact。
+
+## B04｜Content ≠ Goal 私人草稿 Gate（S1-AC04，PR #9）
+
+**不會自動建立 Goal**：只保存私人圖片、文字、OCR 或 Gemma 的 `contentHint` 都不是「我要找真人學伴」。系統絕不能在使用者沒有明確選擇的情況下，自動建立配對意圖。即使已確認 Goal，B04 也**只保存私人 Intent Draft**，不含 B05 Concept Registry、B06 8-slot、B07 Intent Lifecycle、B08 Consent、雲端同步或任何真人搜尋。
+
+**兩條實際畫面路徑**：點開任一私人收藏後，可選「只收藏內容」或親自輸入「你想找真人學伴做什麼？」。前者不執行 Goal Rust 寫入。後者先輸入例如「我想和真人一起練 JLPT N2 聽力」，點「確認 Goal，建立私人草稿」，再於對話框讀取實際文字、按「確認我的 Goal」才呼叫 Rust。取消／返回修改不應有任何事件或草稿。
+
+**Rust 與 SQLite**：本人確認會產生 Rust-owned UUID event、版本號與 `local_goal_drafts`／`local_goal_confirmation_events`。草稿一律 `goalState=confirmed_by_user`、`intentState=draft_private`、`visibility=private`、`shareConsent=false`、`publishable=false`。修改已確認草稿必須再次確認，傳入既有 revision；過期畫面拒絕覆寫。刪除來源收藏時，草稿及事件會隨 SQLite Foreign Key cascade 一併刪除。**人工確認 Goal ≠ 分享同意**。
+
+**待手機驗收（NOT_RUN）**：新增「パクる」或餐廳優惠文字 → 只收藏 → 沒有 Goal、Intent／配對；手動確認一筆 N2 Goal → 私人草稿可查看，重啟仍在；修改 Goal 產生新版本與新確認事件；取消 dialog 不改資料；刪除來源後草稿／事件消失；飛航模式仍可執行，沒有任何外傳。所有狀態與結果保存至 `build/sprints/SPRINT-01_PROGRESS.md`，只以真實操作 Evidence 標 PASS。
+
+**APK 批次規則**：單筆 B04 Commit 不觸發 Android APK，先用 TS／Rust／Harness 自動化測試。至少兩個可驗收功能成批、且程式與相關 CI 穩定時再安排一次 APK／真機測試。
