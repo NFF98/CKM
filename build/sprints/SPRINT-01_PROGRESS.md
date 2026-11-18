@@ -5,7 +5,7 @@
 | Task | 開發狀態 | 測試狀態 | 目前能客觀證明的交付／下一步 |
 |---|---|---|---|
 | **B01** | IN_PROGRESS | Android 啟動＋Bridge：使用者回報成功；飛航模式 NOT_RUN | PR #6：TS／Rust Unit Tests PASS，Android APK 成功打包。使用者回報 Android 0.1.0 上可顯示 `Rust Bridge 已回應`、`平台：android`。未有飛航模式／adb 日誌；S1-AC01 尚未全部 PASS。 |
-| **B02** | IN_PROGRESS | TypeScript 13/13、Rust 13/13、Android APK、Harness CI PASS；Android 真機 NOT_RUN | PR #7：圖片／相機／文字入口、Rust App-private SQLite、重啟後讀取與異常防護已實作。待在 Android 測試選圖、拍照、重啟、飛航模式；F-01 最終格式／大小仍 OPEN。 |
+| **B02** | IN_PROGRESS（新增刪除收藏程式，待 CI／真機重測） | 舊版 CI：TS 13/13、Rust 13/13、APK、Harness PASS；**使用者真機**：選圖／顯示／關閉重啟／飛航模式讀回 PASS；刪除：舊版缺失，新版 NOT_RUN；拍照／損毀檔／權限拒絕 NOT_RUN | PR #7：既有本地 Drop，新增確認刪除、Rust SQLite／圖片檔刪除與中斷恢復；須等新版 CI、APK 與真機驗收，F-01 OPEN。 |
 | B03 | NOT_STARTED | NOT_RUN | 真機本地 OCR／Gemma E2B；最大技術風險 |
 | B04 | NOT_STARTED | NOT_RUN | 內容 ≠ Goal |
 | B05 | NOT_STARTED | NOT_RUN | Parameter Registry |
@@ -34,3 +34,12 @@
 - **CI Evidence**：[TypeScript 13/13 + Rust 13/13 + Vite Build 全 PASS](https://github.com/NFF98/CKM/actions/runs/44048635199)；[Android ARM64 Debug APK 打包與 Artifact PASS](https://github.com/NFF98/CKM/actions/runs/44048635171)；[Harness PASS](https://github.com/NFF98/CKM/actions/runs/44048635155)。這些是 GitHub Runner 的實際測試，不是 Android 手機 E2E。
 - **真機驗收**：新版 APK 的拍照／選圖／文字保存、殺掉 App 後重新讀取、飛航模式與沒有自動外傳**全部 NOT_RUN**。
 - 未定：F-01 的最終圖片格式、容量、批次和重複策略，目前 8MB／64KB 僅工程安全界線；顯示重複但保留兩筆，不宣稱為最終產品策略。
+
+
+## B02 真機回報與刪除補強（2026-11-18）
+
+- **已回報真機 PASS（舊版 B02 APK / Run #44048635171）**：從手機選擇含「パクる」的圖片，圖片成功保存／顯示；完全關閉 App 再開收藏仍存在；飛航模式下依然能讀回收藏。這只能證明圖片保存和讀取，**不代表「パクる」已由 OCR 辨識**（B03 尚未實作）。
+- **已發現 FAIL（舊版）**：無「刪除收藏」入口。於 PR #7 同一分支新增單筆刪除與二次確認；僅刪 App-private 複本與 SQLite 文字／圖片紀錄，不刪相簿原圖。
+- **新增單元測試案例**：TS 刪除 Contract／非法 ID／失敗回應；Rust 文字與圖片刪除、重啟後消失、重複內容獨立刪除、路徑穿越拒絕、圖片缺失不刪 DB、SQL 故障回復、刪除中斷恢復。**新測試 CI 尚未確認，不標 PASS。**
+- **仍待真機**：使用新版 APK「新增圖片／文字 → 點刪除 → 取消不刪 → 再點刪除並確認 → 清單和預覽消失 → 強制關閉 App → 重開後不再出現 → 飛航模式重測」。拍照、損毀圖片、權限拒絕、無自動外傳仍需另行驗收。
+- **不得合併或宣稱 B02 完成**：PR #6、#7 仍為 Stacked PR；當前維持 B02 IN_PROGRESS，B03–B09 NOT_STARTED。
