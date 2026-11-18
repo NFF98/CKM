@@ -16,14 +16,16 @@ describe("S1-AC04/B04：Content 和 Goal 分離", () => {
   it("只有 Drop 日文字、餐廳廣告：查詢回 null，不會生成 Goal", async () => {
     const invoke = vi.fn().mockResolvedValue(null);
     await expect(loadPrivateGoalDraft(invoke, assetId)).resolves.toBeNull();
-    expect(invoke).toHaveBeenCalledExactlyOnceWith("load_private_goal_draft", { assetId });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("load_private_goal_draft", { assetId });
   });
 
   it("使用者明確確認後才傳入一次 Rust Command，事件 ID 只能由 Rust 建立", async () => {
     const invoke = vi.fn().mockResolvedValue(draft);
     await expect(confirmPrivateGoal(invoke, assetId, " 我要找學伴練習 JLPT N2 ", 0))
       .resolves.toEqual(draft);
-    expect(invoke).toHaveBeenCalledExactlyOnceWith("confirm_private_goal", {
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("confirm_private_goal", {
       input: {
         assetId,
         goalText: "我要找學伴練習 JLPT N2",
