@@ -384,7 +384,7 @@ async function initializeModelProvisioning(): Promise<void> {
   } catch (error) {
     modelStatusView.textContent = errorMessage(error);
   }
-  window.setInterval(() => { void initializeModelProvisioning(); }, 2500);
+  window.setInterval(() => { void refreshModelStatus(); }, 2500);
 }
 
 async function renderModelPanel(assetId: string): Promise<void> {
@@ -1172,4 +1172,4 @@ cameraPicker.addEventListener("change", () => {
 });
 
 void refreshDrops();
-void refreshModelStatus();
+void initializeModelProvisioning();
