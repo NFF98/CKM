@@ -119,3 +119,17 @@ textarea {
 .model-output p { border-left: 3px solid #c8d9d6; padding-left: 10px; }
 .model-panel .secondary { min-height: 48px; }
 .note a { color: #0f766e; overflow-wrap: anywhere; }
+
+/* B04 Goal Gate：兩條明確路徑；確認後也只有手機私人草稿。 */
+.goal-panel { margin-top: 18px; padding-top: 14px; border-top: 1px solid #dde8e6; }
+.goal-panel h3 { margin-bottom: 10px; }
+.goal-panel .field-label textarea { display: block; margin-top: 8px; }
+.goal-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.goal-actions button { flex: 1 1 160px; min-height: 48px; }
+.goal-confirm-summary {
+  overflow-wrap: anywhere; white-space: pre-wrap;
+  padding: 12px; border-radius: 10px; background: #f7faf9; font-weight: 650;
+}
+#goal-dialog .delete-dialog-actions { grid-template-columns: 1fr; }
+#goal-dialog .delete-dialog-actions .primary { margin: 0; }
+#goal-dialog .delete-dialog-actions button { min-height: 48px; }
