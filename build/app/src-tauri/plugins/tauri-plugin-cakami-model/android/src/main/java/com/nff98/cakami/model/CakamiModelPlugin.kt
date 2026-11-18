@@ -27,6 +27,11 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 @InvokeArg
+class PrepareModelArgs {
+    var allowMetered: Boolean = false
+}
+
+@InvokeArg
 class ProposeArgs {
     var text: String = ""
 }
@@ -50,6 +55,16 @@ class CakamiModelPlugin(private val activity: Activity): Plugin(activity) {
     private val modelDir: File get() = File(activity.filesDir, "models")
     private val model: File get() = File(modelDir, MODEL_FILE)
     private val checksum: File get() = File(modelDir, "$MODEL_FILE.sha256")
+    private val autoDownloader by lazy {
+        ModelAutoDownloader(
+            context = activity.applicationContext,
+            model = model,
+            checksum = checksum,
+            expectedHash = SHA256,
+            expectedSize = ModelAutoDownloader.GEMMA_SIZE,
+            pinnedUrl = ModelAutoDownloader.GEMMA_URL,
+        )
+    }
 
     private fun verifiedModel(): Boolean {
         return Build.VERSION.SDK_INT >= 26 &&
@@ -65,6 +80,12 @@ class CakamiModelPlugin(private val activity: Activity): Plugin(activity) {
         status.put("runtime", RUNTIME)
         status.put("bytes", if (ready) model.length() else 0L)
         status.put("integrityVerified", ready)
+        val download = autoDownloader.progress(ready)
+        status.put("downloadState", download.state)
+        status.put("downloadedBytes", download.downloadedBytes)
+        status.put("totalBytes", download.totalBytes)
+        if (download.error != null) status.put("downloadError", download.error)
+        else status.put("downloadError", null)
         return status
     }
 
@@ -74,6 +95,32 @@ class CakamiModelPlugin(private val activity: Activity): Plugin(activity) {
             invoke.resolve(statusJson())
         } catch (_: Exception) {
             invoke.reject("MODEL_IMPORT_FAILED")
+        }
+    }
+
+    /**
+     * One-stop first launch: Rust/TS call immediately; only an unmetered connection
+     * auto-downloads 2.59GB. Explicit user click may allow mobile data.
+     * This returns immediately; UI polls modelStatus to show exact progress.
+     */
+    @Command
+    fun prepareModel(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(PrepareModelArgs::class.java)
+            autoDownloader.prepare(args.allowMetered, verifiedModel())
+            invoke.resolve(statusJson())
+        } catch (_: Exception) {
+            invoke.reject("MODEL_DOWNLOAD_FAILED")
+        }
+    }
+
+    @Command
+    fun pauseModelDownload(invoke: Invoke) {
+        try {
+            autoDownloader.pause(verifiedModel())
+            invoke.resolve(statusJson())
+        } catch (_: Exception) {
+            invoke.reject("MODEL_DOWNLOAD_FAILED")
         }
     }
 
