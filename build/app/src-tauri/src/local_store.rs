@@ -12,6 +12,7 @@ use std::{
 };
 use uuid::Uuid;
 use tauri_plugin_cakami_ocr::{NativeOcrResult, OcrSegment};
+use tauri_plugin_cakami_model::NativeReply;
 
 // 暫時的工程安全上限；正式批次、格式和容量策略屬 F-01 待決，不是已核准產品規則。
 pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
@@ -68,6 +69,29 @@ pub struct OcrRecord {
     pub segments: Vec<OcrSegment>,
     pub elapsed_ms: Option<u64>,
     pub updated_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelSuggestion {
+    pub asset_id: String,
+    pub status: String,
+    pub evidence_quote: String,
+    pub content_hint: Option<String>,
+    pub uncertainty: Option<String>,
+    pub model_id: String,
+    pub runtime: String,
+    pub backend: String,
+    pub elapsed_ms: u64,
+    pub updated_at_ms: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RawSuggestion {
+    evidence_quote: String,
+    content_hint: Option<String>,
+    uncertainty: Option<String>,
 }
 
 pub struct LocalStore {
@@ -163,6 +187,19 @@ impl LocalStore {
                updated_at_ms INTEGER NOT NULL,
                CHECK(raw_text IS NULL OR length(raw_text) <= 65536),
                CHECK(corrected_text IS NULL OR length(corrected_text) <= 65536)
+             );
+             CREATE TABLE IF NOT EXISTS local_model_suggestions (
+               asset_id TEXT PRIMARY KEY NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
+               status TEXT NOT NULL CHECK(status='suggested_private'),
+               source_sha256 TEXT NOT NULL CHECK(length(source_sha256)=64),
+               evidence_quote TEXT NOT NULL CHECK(length(evidence_quote)>0),
+               content_hint TEXT,
+               uncertainty TEXT,
+               model_id TEXT NOT NULL,
+               runtime TEXT NOT NULL,
+               backend TEXT NOT NULL,
+               elapsed_ms INTEGER NOT NULL,
+               updated_at_ms INTEGER NOT NULL
              );",
         )
         .map_err(|_| store_error("DATABASE_MIGRATION_FAILED"))?;
