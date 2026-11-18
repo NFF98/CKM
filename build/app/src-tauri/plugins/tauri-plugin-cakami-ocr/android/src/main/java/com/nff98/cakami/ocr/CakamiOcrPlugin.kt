@@ -3,6 +3,8 @@ package com.nff98.cakami.ocr
 import android.app.Activity
 import android.graphics.BitmapFactory
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -15,6 +17,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 @InvokeArg
 class RecognizeArgs {
@@ -62,9 +65,19 @@ class CakamiOcrPlugin(private val activity: Activity) : Plugin(activity) {
                     JapaneseTextRecognizerOptions.Builder().build()
                 )
                 val image = InputImage.fromBitmap(bitmap, 0)
+                val settled = AtomicBoolean(false)
+                val handler = Handler(Looper.getMainLooper())
+                val timeout = Runnable {
+                    if (settled.compareAndSet(false, true)) {
+                        invoke.reject("OCR_TIMEOUT")
+                    }
+                }
+                handler.postDelayed(timeout, 20_000L)
                 client.process(image)
                     .addOnSuccessListener { result ->
                         try {
+                            if (!settled.compareAndSet(false, true)) return@addOnSuccessListener
+                            handler.removeCallbacks(timeout)
                             val segments = JSArray()
                             result.textBlocks.forEach { block ->
                                 block.lines.forEach { line ->
@@ -95,9 +108,12 @@ class CakamiOcrPlugin(private val activity: Activity) : Plugin(activity) {
                         }
                     }
                     .addOnFailureListener {
+                        handler.removeCallbacks(timeout)
                         client.close()
                         bitmap.recycle()
-                        invoke.reject("OCR_RECOGNITION_FAILED")
+                        if (settled.compareAndSet(false, true)) {
+                            invoke.reject("OCR_RECOGNITION_FAILED")
+                        }
                     }
             } catch (_: OutOfMemoryError) {
                 invoke.reject("OCR_OUT_OF_MEMORY")
