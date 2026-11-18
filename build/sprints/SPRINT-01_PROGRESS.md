@@ -138,3 +138,19 @@
 - **已知限制**：目前下載工作執行於 App process，Android 系統終止 App 時不保證背景繼續；重新開啟會從有效 .partial 續傳。耗電、真機內存、外部來源 HTTPS/redirect/Range、Wi-Fi 中斷與空間容量需要手機實際驗收，不可假稱 PASS。
 - **CI／真機**：Rust／TS 自動化與 Android Kotlin 編譯＋JUnit Range／SHA256 測試均已加到 CI；依最新結果標 PASS/FAIL。真正 2.59GB 下載和推論仍然 **NOT_RUN**。
 - **APK 批次**：由先前測試備忘錄中的 B02 刪除、B03 OCR＋Gemma、自動下載、B04 目標確認、B05 同義概念一起驗收，**不是每一項重出一個 APK**。先確認本 PR CI、Kotlin 測試，再產出一次 Android ARM64 測試 APK。
+
+## B03 Gemma 首輪手機推論 FAIL 修正（2026-11-18）
+
+- **使用者回報的真實 Android 測試 Evidence**：已自動下載 Gemma 4 E2B；對私人日文單字「パクる」按「用手機 Gemma 理解」時，App 顯示 **「模型輸出無法核對原文」**（舊版錯誤碼 `MODEL_INVALID_OUTPUT`）。屬於 B03 模型回答／Rust Output Validation 真機 **FAIL**；不可標為 B03 PASS。此錯誤表示模型輸出通過 native 呼叫到 Rust save 階段，但無原始模型回答可判定具體哪個條件違反；不應宣稱已確定是 JSON fence 或 hallucination。
+- **程式問題**：原 Rust `serde_json::from_str` 嚴格只接受裸 JSON、`evidenceQuote` 必填且逐字匹配；小型模型輸出 Markdown fence、普通敘述、漏掉 quote、日文引用標點都會無差別回 `MODEL_INVALID_OUTPUT`。
+- **修正方案（PR #12）**：只有私人建議可以接受短普通文字及 fenced JSON；如果模型沒給 evidenceQuote，Rust 自私人收藏原文（或本人更正後的 OCR）擷取不超過 80 字原文。若模型**明確給錯引用**，仍拒絕；多餘未知 JSON 欄位（含 Goal、Consent）、偽造確認／公開欄位仍拒絕；OCR 修改後舊提示仍失效。明確區分格式錯誤／原文引用不符／越權欄位，方便下一次真機回報。Android Gemma 提示詞更短且預算 384 tokens，減少 JSON 被截斷的風險。所有候選仍是 `suggested_private`，不會自行建立 Intent／分享。
+- **回歸測試**：保存單字「パクる」後接受合法 JSON、fenced JSON、普通說明、由 Rust 原文擷取 quote；錯的 quote／偽造 Consent 或 Goal／格式破損皆拒絕。先跑 Rust/TS 和 Android Kotlin compile-only CI；**新版 APK 尚未打包**，避免每修一個問題就產生一次 APK。手機修正結果保持 NOT_RUN。
+- **模型檔處理**：此為 Rust/提示詞修正，不改官方模型 SHA、大小或路徑，不應要求使用者重新下載模型。下次使用同簽章同 application ID 升級安裝時，原 App 私人檔應保留；若解除安裝或清除 App 資料則可能被刪除。
+
+## B03 Android 回歸：Gemma 已下載卻顯示「本地 AI 尚未接入」（2026-11-18）
+
+- **用戶真機回報 FAIL**：Gemma 2.59 GB 已自動下載，B01 裝置狀態頁依舊顯示「本地 AI：尚未接入」。實際查碼發現有兩個硬編碼：B01 `platform::NativeAdapter::native_ai_state()` 永遠回 `not_installed`，首頁 `runBridgeCheck()` 又無視 `nativeAi`，固定輸出「尚未接入」。
+- **與原本 B03 Gemma「パクる」原文輸出驗證 FAIL 一起修**：[PR #12](https://github.com/NFF98/CKM/pull/12)，Rust `bridge_health(app)` 呼叫真實 `tauri_plugin_cakami_model::status(&app)`；嚴格區分 `model_verified`、`downloading`、`waiting_wifi`、`paused`、`download_error`、`not_installed`、`unavailable`、`status_error`；TS Contract 和手機診斷頁用實際回傳狀態顯示。模型已校驗不等於推論通過，避免誤導。
+- **回歸測試**：Rust 模擬各種本地模型狀態，要求已安裝經驗證才有 `model_verified`；TS 檢查真實型別並拒絕捏造 cloud_ready；既有 Bridge、B02–B05 和 B03 安全驗證全部要過。無 Cloud fallback。
+- **新版 Android ARM64 APK**：本次為**兩項已發生的真機測試失敗的阻斷性修復**（模型 JSON／日文 quote + Bridge 錯誤狀態），明確依使用者要求立刻批次打包再測。Android 需同一 app ID／簽章**直接升級安裝**，不要先解除安裝或清除 App 資料，以免已下載 Gemma 2.59GB 丟失；若遇簽章衝突則需先處理既有資料保留，不可未經提醒就卸載。
+- **下一步真機驗收**：首頁確認 Gemma 已安裝 → 裝置狀態重新執行檢查應顯示「Gemma 4 E2B 已安裝／校驗通過（推論仍須實測）」；收藏一筆純文字 `パクる` → 點理解，若回 JSON／fenced JSON／簡短敘述都應保存為 **私人候選**，不應越權變成 Goal。再測飛航模式，原模型檔無需重下。這些真機結果尚為 NOT_RUN。

@@ -140,7 +140,7 @@ root.innerHTML = `
         <div class="diagnostic-panel">
           <p class="diagnostic-title">Rust Bridge</p>
           <p id="bridge-status" role="status" aria-live="polite">尚未執行檢查</p>
-          <p id="bridge-detail" class="detail">本地 AI 尚未接入。</p>
+          <p id="bridge-detail" class="detail">尚未檢查手機內的模型狀態。</p>
         </div>
         <button type="button" class="primary" id="check-bridge">執行連線檢查</button>
         <button type="button" class="secondary" id="back-home">返回開始</button>
@@ -255,7 +255,11 @@ const errors: Record<string, string> = {
   MODEL_INPUT_UNKNOWN: "尚無可辨識的日文；請先 OCR 或保存人工更正。",
   MODEL_INPUT_TOO_LARGE: "原始內容太長，暫時無法進行裝置端理解。",
   MODEL_INPUT_INVALID: "本地模型輸入不合法，操作已停止。",
-  MODEL_INVALID_OUTPUT: "模型輸出無法核對原文證據，已拒絕保存。",
+  MODEL_INVALID_OUTPUT: "Gemma 輸出欄位不合法，系統沒有保存，也沒有建立任何 Goal。",
+  MODEL_OUTPUT_FORMAT: "Gemma 回答格式不完整，已拒絕保存；可以再按一次理解。",
+  MODEL_EVIDENCE_MISMATCH: "Gemma 引用的文字與原文不符，已拒絕保存；請檢查原文或重新執行。",
+  MODEL_OUTPUT_TOO_LONG: "Gemma 回答超出安全長度，沒有保存；可以重新執行。",
+  MODEL_OUTPUT_UNAPPROVED_FIELDS: "Gemma 回答涉及不能由 AI 決定的欄位，已拒絕保存。",
   MODEL_STALE_INPUT: "你已更新原文／OCR，舊的模型建議已失效，請重新推論。",
   GOAL_EMPTY: "請親自輸入你想找真人學伴做什麼；只有收藏字詞還不等於 Goal。",
   GOAL_TOO_LARGE: "目標敘述太長，請縮短至最多 500 字／2048 bytes。",
@@ -1030,7 +1034,17 @@ async function runBridgeCheck(): Promise<void> {
   try {
     const result = await checkBridge(rust);
     status.textContent = "Rust Bridge 已回應";
-    detail.textContent = `平台：${result.platform} · 版本：${result.appVersion} · 不需網路：是 · 雲端 AI：禁用 · 本地 AI：尚未接入`;
+    const aiState: Record<typeof result.nativeAi, string> = {
+      model_verified: "Gemma 4 E2B 已安裝／校驗通過（推論仍須實測）",
+      downloading: "Gemma 正在下載或驗證",
+      waiting_wifi: "等待 Wi-Fi 下載 Gemma",
+      paused: "Gemma 下載已暫停",
+      download_error: "Gemma 模型下載有問題",
+      unavailable: "此裝置暫不支援 Gemma",
+      not_installed: "Gemma 尚未安裝",
+      status_error: "無法取得 Gemma 模型狀態（不代表未安裝）"
+    };
+    detail.textContent = `平台：${result.platform} · 版本：${result.appVersion} · Rust Bridge 不需網路：是 · 雲端 AI：禁用 · 本地 AI：${aiState[result.nativeAi]}`;
   } catch (error) {
     status.textContent = "Rust Bridge 檢查失敗";
     detail.textContent = errorMessage(error);

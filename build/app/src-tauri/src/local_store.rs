@@ -89,9 +89,85 @@ pub struct ModelSuggestion {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RawSuggestion {
-    evidence_quote: String,
+    // Missing quote? Rust may quote the saved original, never an AI guess.
+    evidence_quote: Option<String>,
     content_hint: Option<String>,
     uncertainty: Option<String>,
+}
+
+/// On-device small models may return JSON, fenced JSON or plain text.
+/// Only private hints are stored. Source evidence can only come from the saved
+/// private original. No model output can create a Goal / Consent / match.
+fn parse_private_model_reply(
+    original: &str,
+    reply: &str,
+) -> Result<(String, Option<String>, Option<String>), String> {
+    let text = reply.trim().trim_start_matches('\u{feff}').trim();
+    if text.is_empty() || text.len() > 8192 {
+        return Err(store_error("MODEL_OUTPUT_FORMAT"));
+    }
+
+    let body = if let Some(after) = text.strip_prefix("```json\n")
+        .or_else(|| text.strip_prefix("```JSON\n"))
+        .or_else(|| text.strip_prefix("```\n"))
+    {
+        after.strip_suffix("\n```").ok_or("MODEL_OUTPUT_FORMAT")?.trim()
+    } else {
+        text
+    };
+
+    let raw: RawSuggestion = match serde_json::from_str(body) {
+        Ok(value) => value,
+        Err(_) => {
+            // Malformed JSON or structured instructions must never be accepted.
+            // Only short unstructured explanations become private-only hints.
+            if body.starts_with('{') || body.starts_with('[')
+                || body.starts_with('"') || body.contains('`')
+                || body.contains('{') || body.contains('}')
+                || body.chars().count() > 200
+            {
+                return Err(store_error("MODEL_OUTPUT_FORMAT"));
+            }
+            let lowercase = body.to_ascii_lowercase();
+            if ["consent", "confirmed", "visibility", "publish",
+                "goal:", "offer:", "need:", "source=", "owner="]
+                .iter().any(|unsafe_word| lowercase.contains(unsafe_word))
+            {
+                return Err(store_error("MODEL_OUTPUT_UNAPPROVED_FIELDS"));
+            }
+            RawSuggestion {
+                evidence_quote: None,
+                content_hint: Some(body.to_owned()),
+                uncertainty: Some("模型回覆為一般文字，尚未結構化；請自行核對。".into()),
+            }
+        }
+    };
+
+    if raw.content_hint.as_ref().is_some_and(|v| v.chars().count() > 200)
+        || raw.uncertainty.as_ref().is_some_and(|v| v.chars().count() > 160)
+    {
+        return Err(store_error("MODEL_OUTPUT_TOO_LONG"));
+    }
+
+    let quote = match raw.evidence_quote.as_deref() {
+        Some(proposed) if !proposed.trim().is_empty() => {
+            let candidate = proposed.trim().trim_matches(&[
+                '「', '」', '『', '』', '“', '”', '"', '\''
+            ][..]).trim();
+            if candidate.is_empty() || candidate.chars().count() > 80
+                || !original.contains(candidate)
+            {
+                return Err(store_error("MODEL_EVIDENCE_MISMATCH"));
+            }
+            candidate.to_owned()
+        }
+        // Only bytes from the local asset or corrected OCR are copied.
+        _ => original.chars().take(80).collect(),
+    };
+    if quote.trim().is_empty() || !original.contains(&quote) {
+        return Err(store_error("MODEL_EVIDENCE_MISMATCH"));
+    }
+    Ok((quote, raw.content_hint, raw.uncertainty))
 }
 
 pub struct LocalStore {
@@ -588,16 +664,8 @@ impl LocalStore {
         {
             return Err(store_error("MODEL_INVALID_OUTPUT"));
         }
-        let raw: RawSuggestion = serde_json::from_str(native.raw_text.trim())
-            .map_err(|_| store_error("MODEL_INVALID_OUTPUT"))?;
-        let quote = raw.evidence_quote.trim();
-        if quote.is_empty() || quote.chars().count() > 80
-            || !original_input.contains(quote)
-            || raw.content_hint.as_ref().is_some_and(|v| v.chars().count() > 200)
-            || raw.uncertainty.as_ref().is_some_and(|v| v.chars().count() > 160)
-        {
-            return Err(store_error("MODEL_INVALID_OUTPUT"));
-        }
+        let (quote, content_hint, uncertainty) =
+            parse_private_model_reply(original_input, &native.raw_text)?;
         let sha = format!("{:x}", Sha256::digest(original_input.as_bytes()));
         let now = clock_ms()?;
         let mut conn = self.connect()?;
@@ -636,7 +704,7 @@ impl LocalStore {
                backend=excluded.backend,
                elapsed_ms=excluded.elapsed_ms,
                updated_at_ms=excluded.updated_at_ms",
-            params![uuid, sha, quote, raw.content_hint, raw.uncertainty, native.model_id,
+            params![uuid, sha, quote, content_hint, uncertainty, native.model_id,
                     native.runtime, native.backend, native.elapsed_ms as i64, now],
         ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
         tx.commit().map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
@@ -1079,16 +1147,76 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = LocalStore::open(dir.path()).unwrap();
         let saved = store.save(text_drop("パクる")).unwrap();
-        for json in [
-            r#"{"evidenceQuote":"不存在","contentHint":null,"uncertainty":null}"#,
-            r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"consent":true}"#,
-            r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"goal":"Study Match"}"#,
-            "not valid JSON",
+        for (json, code) in [
+            (r#"{"evidenceQuote":"不存在","contentHint":null,"uncertainty":null}"#,
+             "MODEL_EVIDENCE_MISMATCH"),
+            (r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"consent":true}"#,
+             "MODEL_OUTPUT_FORMAT"),
+            (r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"goal":"Study Match"}"#,
+             "MODEL_OUTPUT_FORMAT"),
+            (r#"{"contentHint":"bad", "visibility":"public"}"#,
+             "MODEL_OUTPUT_FORMAT"),
+            ("{\"contentHint\":", "MODEL_OUTPUT_FORMAT"),
+            ("Consent: true; Goal: match this person", "MODEL_OUTPUT_UNAPPROVED_FIELDS"),
         ] {
             assert_eq!(store.save_model_suggestion(&saved.id, "パクる", model_reply(json))
-                       .unwrap_err(), "MODEL_INVALID_OUTPUT");
+                       .unwrap_err(), code);
         }
         assert!(store.load_model_suggestion(&saved.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn b03_phone_regression_japanese_word_fenced_json_is_validated_and_private() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        let reply = model_reply("```json\n{\"evidenceQuote\":\"「パクる」\",\"contentHint\":\"模仿或抄襲、偷竊（視語境）\",\"uncertainty\":null}\n```");
+        let result = store.save_model_suggestion(&saved.id, "パクる", reply).unwrap();
+        assert_eq!(result.status, "suggested_private");
+        assert_eq!(result.evidence_quote, "パクる");
+        assert_eq!(result.content_hint.as_deref(), Some("模仿或抄襲、偷竊（視語境）"));
+        assert_eq!(store.load_model_suggestion(&saved.id).unwrap().unwrap().status,
+                   "suggested_private");
+    }
+
+    #[test]
+    fn b03_phone_regression_japanese_word_freeform_hint_can_be_saved_privately() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        let result = store.save_model_suggestion(
+            &saved.id, "パクる", model_reply("「パクる」は日常語，表示模仿、抄襲或偷竊。"),
+        ).unwrap();
+        assert_eq!(result.evidence_quote, "パクる");
+        assert_eq!(result.status, "suggested_private");
+        assert!(result.uncertainty.unwrap().contains("一般文字"));
+    }
+
+    #[test]
+    fn b03_phone_regression_missing_model_quote_is_sourced_by_rust_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        let reply = model_reply(r#"{"contentHint":"抄襲或偷竊","uncertainty":null}"#);
+        let result = store.save_model_suggestion(&saved.id, "パクる", reply).unwrap();
+        assert_eq!(result.evidence_quote, "パクる");
+        assert_eq!(result.content_hint.as_deref(), Some("抄襲或偷竊"));
+    }
+
+    #[test]
+    fn b03_phone_regression_no_untrusted_reply_is_allowed_to_invent_evidence() {
+        assert_eq!(
+            parse_private_model_reply("パクる", r#"{"evidenceQuote":"勉強します","contentHint":"foo","uncertainty":null}"#)
+                .unwrap_err(), "MODEL_EVIDENCE_MISMATCH"
+        );
+        assert_eq!(
+            parse_private_model_reply("パクる", "{\"contentHint\":\"not closed\"")
+                .unwrap_err(), "MODEL_OUTPUT_FORMAT"
+        );
+        assert_eq!(
+            parse_private_model_reply("パクる", "```json\n{\"contentHint\": \"x\"}\n```\nExtra")
+                .unwrap_err(), "MODEL_OUTPUT_FORMAT"
+        );
     }
 
     #[test]

@@ -18,11 +18,24 @@ struct BridgeHealth {
     native_ai: &'static str,
 }
 
-/// S1-AC01／B01：真實 Rust Command（無網路／無遠端推論）。
-/// B03 才會接入本地 OCR／E2B；此回應不能假裝 AI 已可用。
-#[tauri::command]
-fn bridge_health() -> BridgeHealth {
+/// B01 Rust Bridge 現在讀 B03 真實 Android Model Adapter；不再硬寫
+/// 「尚未接入」。model_verified 僅代表下載＋驗證，**不代表推論已 PASS**。
+/// 無法取得狀態時只能回 status_error，不可假報模型 ready。
+fn bridge_health_from_model(
+    model: Option<&tauri_plugin_cakami_model::ModelStatus>,
+) -> BridgeHealth {
     let adapter = platform::current_platform();
+    let native_ai = match model {
+        None => "status_error",
+        Some(m) if m.installed && m.integrity_verified => "model_verified",
+        Some(m) if m.download_state == "downloading" || m.download_state == "verifying" =>
+            "downloading",
+        Some(m) if m.download_state == "waiting_wifi" => "waiting_wifi",
+        Some(m) if m.download_state == "paused" => "paused",
+        Some(m) if m.download_state == "error" => "download_error",
+        Some(m) if m.download_state == "unavailable" => "unavailable",
+        Some(_) => "not_installed",
+    };
     BridgeHealth {
         contract_version: 1,
         bridge: "ready",
@@ -30,8 +43,15 @@ fn bridge_health() -> BridgeHealth {
         app_version: env!("CARGO_PKG_VERSION"),
         network_required: false,
         cloud_ai_enabled: false,
-        native_ai: adapter.native_ai_state(),
+        native_ai,
     }
+}
+
+/// Rust Bridge 真正呼叫模型原生插件，診斷與 Gemma 狀態同源。
+#[tauri::command]
+fn bridge_health(app: tauri::AppHandle) -> BridgeHealth {
+    let model = tauri_plugin_cakami_model::status(&app).ok();
+    bridge_health_from_model(model.as_ref())
 }
 
 fn private_store(app: &tauri::AppHandle) -> Result<local_store::LocalStore, String> {
@@ -247,23 +267,53 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    fn sample_model(installed: bool, integrity_verified: bool, download_state: &str)
+        -> tauri_plugin_cakami_model::ModelStatus {
+        tauri_plugin_cakami_model::ModelStatus {
+            installed,
+            model_id: "gemma-4-E2B-it".to_string(),
+            runtime: "litert-lm-android-0.16.1".to_string(),
+            bytes: if installed { 2_588_147_712 } else { 0 },
+            integrity_verified,
+            download_state: download_state.to_string(),
+            downloaded_bytes: if installed { 2_588_147_712 } else { 0 },
+            total_bytes: 2_588_147_712,
+            download_error: None,
+        }
+    }
+
     #[test]
-    fn b01_rust_bridge_contract_is_local() {
-        let status = bridge_health();
+    fn b01_bridge_is_local_but_reads_actual_model_state() {
+        let model = sample_model(false, false, "waiting_wifi");
+        let status = bridge_health_from_model(Some(&model));
         assert_eq!(status.contract_version, 1);
         assert_eq!(status.bridge, "ready");
         assert!(!status.platform.is_empty());
         assert!(!status.network_required);
         assert!(!status.cloud_ai_enabled);
-        assert_eq!(status.native_ai, "not_installed");
+        assert_eq!(status.native_ai, "waiting_wifi");
     }
 
     #[test]
-    fn b01_ts_contract_serialization() {
-        let json = serde_json::to_value(bridge_health()).expect("應可序列化");
+    fn b03_bridge_reports_verified_local_model_not_inference_pass() {
+        let ready = sample_model(true, true, "ready");
+        let json = serde_json::to_value(bridge_health_from_model(Some(&ready)))
+            .expect("應可序列化");
         assert_eq!(json["contractVersion"], 1);
         assert_eq!(json["networkRequired"], false);
         assert_eq!(json["cloudAiEnabled"], false);
-        assert_eq!(json["nativeAi"], "not_installed");
+        assert_eq!(json["nativeAi"], "model_verified");
+    }
+
+    #[test]
+    fn b03_bridge_never_reports_ready_from_partial_or_missing_model() {
+        for state in ["downloading", "verifying", "paused", "waiting_wifi", "error",
+                      "unavailable", "idle"] {
+            let model = sample_model(false, false, state);
+            assert_ne!(bridge_health_from_model(Some(&model)).native_ai, "model_verified");
+        }
+        assert_eq!(bridge_health_from_model(None).native_ai, "status_error");
+        let mismatch = sample_model(true, false, "ready");
+        assert_ne!(bridge_health_from_model(Some(&mismatch)).native_ai, "model_verified");
     }
 }
