@@ -1,0 +1,52 @@
+name: B03 Android 原生 Kotlin 編譯（不打包 APK）
+
+on:
+  pull_request:
+    paths:
+      - 'build/app/src-tauri/plugins/tauri-plugin-cakami-ocr/android/**'
+      - 'build/app/src-tauri/plugins/tauri-plugin-cakami-model/android/**'
+      - '.github/workflows/b03-native-compile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kotlin:
+    name: 只檢查 Android 原生 OCR／Gemma Kotlin 編譯
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 更新 npm
+        run: npm install -g npm@11
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: 安裝 Android Gradle SDK
+        run: |
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: 安裝 Tauri 開發依賴
+        working-directory: build/app
+        run: npm install --no-audit --no-fund
+      - name: 生成 Android 專案（不建 APK）
+        working-directory: build/app
+        run: npx tauri android init --ci
+      - name: 驗證兩個本地插件存在於 Gradle
+        working-directory: build/app/src-tauri/gen/android
+        run: |
+          ./gradlew projects --no-daemon > /tmp/b03-gradle-projects.txt
+          cat /tmp/b03-gradle-projects.txt
+          grep -q 'tauri-plugin-cakami-ocr' /tmp/b03-gradle-projects.txt
+          grep -q 'tauri-plugin-cakami-model' /tmp/b03-gradle-projects.txt
+      - name: 編譯 Kotlin Plugin（不打包 APK）
+        working-directory: build/app/src-tauri/gen/android
+        run: ./gradlew compileDebugKotlin --no-daemon --stacktrace
