@@ -22,6 +22,14 @@ import {
   loadPrivateGoalDraft,
   type PrivateGoalDraft
 } from "./platform/private-goal";
+import {
+  confirmParameter,
+  listParameters,
+  listRegistry,
+  previewConcept,
+  saveParameter,
+  type PrivateParameter,
+} from "./platform/private-parameters";
 import "./styles.css";
 
 type View = "drop" | "diagnostic";
@@ -79,6 +87,17 @@ root.innerHTML = `
           <button type="button" class="secondary" id="import-model">從手機檔案匯入 Gemma 模型</button>
         </section>
 
+        <dialog id="parameter-dialog" class="confirm-dialog"
+          aria-labelledby="parameter-dialog-title" aria-describedby="parameter-dialog-explanation">
+          <h2 id="parameter-dialog-title">本人確認這個條件？</h2>
+          <p id="parameter-dialog-explanation">這只會建立手機裡的私人參數確認事件；不是發布、不是分享同意，也不會立即搜尋學伴。</p>
+          <p id="parameter-confirm-summary" class="goal-confirm-summary"></p>
+          <p id="parameter-confirm-status" class="status" role="status" aria-live="polite"></p>
+          <div class="delete-dialog-actions">
+            <button id="parameter-cancel" type="button" class="secondary">返回修改</button>
+            <button id="parameter-commit" type="button" class="primary">確認此私人條件</button>
+          </div>
+        </dialog>
         <dialog id="goal-dialog" class="confirm-dialog" aria-labelledby="goal-dialog-title" aria-describedby="goal-dialog-explanation">
           <h2 id="goal-dialog-title">確認這是你真正想做的事？</h2>
           <p id="goal-dialog-explanation">只有你按下「確認我的 Goal」，Rust 才會建立或更新手機裡的私人意圖草稿與本人確認事件。這不會公開、尋找學伴或傳送資料。</p>
@@ -159,6 +178,11 @@ const goalConfirmSummary = get<HTMLElement>("#goal-confirm-summary");
 const goalConfirmStatus = get<HTMLElement>("#goal-confirm-status");
 const goalCancel = get<HTMLButtonElement>("#goal-cancel");
 const goalCommit = get<HTMLButtonElement>("#goal-commit");
+const parameterDialog = get<HTMLDialogElement>("#parameter-dialog");
+const parameterConfirmSummary = get<HTMLElement>("#parameter-confirm-summary");
+const parameterConfirmStatus = get<HTMLElement>("#parameter-confirm-status");
+const parameterCancel = get<HTMLButtonElement>("#parameter-cancel");
+const parameterCommit = get<HTMLButtonElement>("#parameter-commit");
 
 const rust: InvokeAdapter = (command, args) => invoke(command, args);
 let saving = false;
@@ -168,6 +192,9 @@ let deleteReturnFocus: HTMLElement | null = null;
 let goalConfirmAction: (() => Promise<void>) | null = null;
 let goalConfirmBusy = false;
 let goalReturnFocus: HTMLElement | null = null;
+let parameterConfirmAction: (() => Promise<void>) | null = null;
+let parameterConfirmBusy = false;
+let parameterReturnFocus: HTMLElement | null = null;
 
 const errors: Record<string, string> = {
   EMPTY_TEXT: "請先輸入文字；空白不會被存成收藏。",
@@ -221,6 +248,18 @@ const errors: Record<string, string> = {
   GOAL_TOO_LARGE: "目標敘述太長，請縮短至最多 500 字／2048 bytes。",
   GOAL_CONFIRMATION_REQUIRED: "未收到有效的本人明確確認操作，沒有建立草稿。",
   GOAL_REVISION_CONFLICT: "草稿已被更新，請重新開啟收藏查看最新版本後再確認。",
+  INVALID_DRAFT_ID: "私人 Goal 或參數識別碼不合法，已拒絕操作。",
+  INVALID_PARAMETER_INPUT: "條件名稱／內容無效或太長，請重新輸入。",
+  INVALID_TYPE: "這個已知概念目前只允許明確核准的 N2 值，其他值不能假裝已確認。",
+  INVALID_SCOPE: "目前只能管理 Intent 範圍的私人條件，Profile／Pair 尚未開放。",
+  INVALID_EXPIRY: "一次性條件必須親自指定未來的完整日期與時間，不能猜測『週六』或改成每週。",
+  INVALID_VERSION: "參數版本不合法，請重新開啟收藏。",
+  PARAMETER_VERSION_CONFLICT: "條件已更新。請重新開啟收藏後，再修改或確認。",
+  PARAMETER_CONFIRMATION_REQUIRED: "沒有收到本人明確確認，未改變參數狀態。",
+  PARAMETER_UNAPPROVED_CONCEPT: "這是未知或未批准的私人條件，不能確認成正式配對概念。",
+  PARAMETER_NOT_FOUND: "找不到條件或已從這份私人草稿移除。",
+  DATABASE_MIGRATION_FAILED: "本機參數資料庫初始化失敗，請不要重試公開分享。",
+
 };
 
 function errorMessage(error: unknown): string {
@@ -517,6 +556,189 @@ async function renderOcrEditor(assetId: string): Promise<void> {
   });
 }
 
+/** B05 — Registry gate: only confirmed private Goals can own parameter proposals. */
+async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Promise<void> {
+  if (selectedAssetId !== assetId) return;
+  preview.querySelector(".parameter-panel")?.remove();
+  const panel = document.createElement("section");
+  panel.className = "parameter-panel";
+  panel.setAttribute("aria-label", "私人配對條件與參數 Registry");
+  const heading = document.createElement("h3");
+  heading.textContent = "私人條件（B05）";
+  const guidance = document.createElement("p");
+  guidance.className = "fineprint";
+  guidance.textContent = "目前只有 N2／JLPT N2／日語二級是已知的同一種概念。其他輸入只會成為 UNKNOWN 私人候選，不會被當作正式配對條件。";
+  const status = document.createElement("p");
+  status.className = "status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+
+  const aliasField = document.createElement("label");
+  aliasField.className = "field-label";
+  aliasField.textContent = "想記錄的條件（概念或別名）";
+  const aliasInput = document.createElement("input");
+  aliasInput.type = "text";
+  aliasInput.maxLength = 80;
+  aliasInput.placeholder = "例如：JLPT N2";
+  aliasField.append(aliasInput);
+
+  const valueField = document.createElement("label");
+  valueField.className = "field-label";
+  valueField.textContent = "條件值（已輸入 N2 時可留空）";
+  const valueInput = document.createElement("input");
+  valueInput.type = "text";
+  valueInput.maxLength = 200;
+  valueInput.placeholder = "例如：N2";
+  valueField.append(valueInput);
+
+  const expiryField = document.createElement("label");
+  expiryField.className = "field-label";
+  expiryField.textContent = "這個條件有效多久？";
+  const policy = document.createElement("select");
+  const optionIntent = document.createElement("option");
+  optionIntent.value = "intent_lifecycle";
+  optionIntent.textContent = "只限這份私人 Goal 草稿";
+  const optionFixed = document.createElement("option");
+  optionFixed.value = "fixed";
+  optionFixed.textContent = "一次性：指定日期及時間";
+  policy.append(optionIntent, optionFixed);
+  expiryField.append(policy);
+
+  const dateField = document.createElement("label");
+  dateField.className = "field-label";
+  dateField.textContent = "一次性的日期／時間（不會自動每週重複）";
+  const fixedDate = document.createElement("input");
+  fixedDate.type = "datetime-local";
+  dateField.append(fixedDate);
+  dateField.hidden = true;
+  policy.addEventListener("change", () => {
+    dateField.hidden = policy.value !== "fixed";
+  });
+
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "secondary";
+  save.textContent = "保存私人條件候選";
+  const list = document.createElement("ul");
+  list.className = "parameter-list";
+  panel.append(heading, guidance, status, aliasField, valueField, expiryField,
+    dateField, save, list);
+  preview.append(panel);
+
+  let rows: PrivateParameter[] = [];
+  const active = () => selectedAssetId === assetId && panel.isConnected;
+  async function refresh(): Promise<void> {
+    if (!active()) return;
+    try {
+      rows = await listParameters(rust, goal.id);
+      if (!active()) return;
+      list.replaceChildren();
+      if (!rows.length) {
+        status.textContent = "尚無任何私人配對條件。單純收藏、OCR 或模型建議不會自動新增條件。";
+      }
+      for (const item of rows) {
+        const li = document.createElement("li");
+        const name = document.createElement("p");
+        name.className = "parameter-label";
+        name.textContent = item.conceptId
+          ? item.conceptId + "：" + (item.valueJson || "UNKNOWN")
+          : "UNKNOWN：" + item.requestedAlias;
+        const summary = document.createElement("p");
+        summary.className = "fineprint";
+        const expiryText = item.expiryPolicy === "fixed" && item.expiresAtMs !== null
+          ? "一次性有效至 " + new Date(item.expiresAtMs).toLocaleString("zh-TW")
+          : "只限此私人草稿";
+        summary.textContent = "來源：本人輸入 · 狀態：" + item.state +
+          " · v" + item.version + " · " + expiryText +
+          (item.stale ? " · Goal 已修改，此候選需重新保存" : "");
+        li.append(name, summary);
+        if (item.state === "OBSERVED" && item.conceptId && !item.stale) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "secondary";
+          button.textContent = "由本人確認這個私人條件";
+          button.addEventListener("click", () => {
+            if (!active() || parameterDialog.open || parameterConfirmBusy) return;
+            parameterConfirmSummary.textContent =
+              name.textContent + " · " + expiryText + " · 仍為私人內容";
+            parameterConfirmStatus.textContent = "尚未確認；可返回修改。";
+            parameterReturnFocus = document.activeElement instanceof HTMLElement
+              ? document.activeElement : null;
+            parameterConfirmAction = async () => {
+              if (!active()) throw new Error("PARAMETER_NOT_FOUND");
+              await confirmParameter(rust, goal.id, item.id, item.version);
+              await refresh();
+            };
+            parameterDialog.showModal();
+          });
+          li.append(button);
+        } else if (item.state === "UNKNOWN") {
+          const blocked = document.createElement("p");
+          blocked.className = "fineprint";
+          blocked.textContent = "概念或值尚未核准，不能被確認或拿去找人。";
+          li.append(blocked);
+        }
+        list.append(li);
+      }
+    } catch (error) {
+      if (active()) status.textContent = errorMessage(error);
+    }
+  }
+
+  save.addEventListener("click", () => {
+    if (!active() || parameterConfirmBusy) return;
+    const alias = aliasInput.value.trim();
+    const value = valueInput.value.trim() || null;
+    const expiryPolicy = policy.value === "fixed" ? "fixed" : "intent_lifecycle";
+    const dateMs = expiryPolicy === "fixed" ? new Date(fixedDate.value).getTime() : null;
+    if (expiryPolicy === "fixed" && (!fixedDate.value || !Number.isFinite(dateMs))) {
+      status.textContent = errorMessage("INVALID_EXPIRY");
+      return;
+    }
+    save.disabled = true;
+    status.textContent = "正在由 Rust 驗證概念、期限與私人來源…";
+    void (async () => {
+      try {
+        const previewResult = await previewConcept(rust, alias, value);
+        const prior = rows.find(item => previewResult.conceptId
+          ? item.conceptId === previewResult.conceptId
+          : item.conceptId === null && item.requestedAlias === alias);
+        const saved = await saveParameter(rust, {
+          draftId: goal.id,
+          expectedDraftRevision: goal.revision,
+          conceptAlias: alias,
+          value,
+          scope: "intent",
+          expiryPolicy,
+          expiresAtMs: dateMs,
+          expectedVersion: prior?.version ?? 0,
+        });
+        if (!active()) return;
+        await refresh();
+        if (active()) {
+          status.textContent = saved.state === "UNKNOWN"
+            ? "已保存 UNKNOWN 私人候選。未經 Registry 批准，不能確認或分享。"
+            : "已保存私人條件（OBSERVED）。要正式確認這個條件，請另按本人確認。";
+        }
+      } catch (error) {
+        if (active()) status.textContent = errorMessage(error);
+      } finally {
+        save.disabled = false;
+      }
+    })();
+  });
+
+  try {
+    const registry = await listRegistry(rust);
+    if (active() && registry.length === 0) {
+      status.textContent = "尚無已批准的 Registry；未知輸入都只能保存為私人候選。";
+    }
+  } catch (error) {
+    if (active()) status.textContent = errorMessage(error);
+  }
+  await refresh();
+}
+
 /** B04：不從 OCR 或模型自動填入或確認 Goal；本人明確輸入且二次確認後才寫 Rust。 */
 async function renderGoalPanel(assetId: string): Promise<void> {
   if (selectedAssetId !== assetId) return;
@@ -565,6 +787,7 @@ async function renderGoalPanel(assetId: string): Promise<void> {
     state.textContent = "Goal 已由本人確認 · 私人草稿 v" + saved.revision +
       " · 沒有分享授權，也沒有建立可公開的 Intent。";
     confirm.textContent = "再次確認修改後的私人 Goal";
+    if (selectedAssetId === assetId) void renderParameterPanel(assetId, saved);
   }
 
   try {
@@ -767,6 +990,36 @@ importModelButton.addEventListener("click", () => {
       importModelButton.disabled = false;
     }
   })();
+});
+parameterCancel.addEventListener("click", () => parameterDialog.close());
+parameterCommit.addEventListener("click", () => {
+  if (!parameterConfirmAction || parameterConfirmBusy) return;
+  const action = parameterConfirmAction;
+  parameterConfirmBusy = true;
+  parameterCancel.disabled = true;
+  parameterCommit.disabled = true;
+  parameterConfirmStatus.textContent = "Rust 正在建立本人確認事件，仍不會分享或發布…";
+  void (async () => {
+    try {
+      assertNative();
+      await action();
+      parameterDialog.close();
+    } catch (error) {
+      parameterConfirmStatus.textContent = errorMessage(error);
+    } finally {
+      parameterConfirmBusy = false;
+      parameterCancel.disabled = false;
+      parameterCommit.disabled = false;
+    }
+  })();
+});
+parameterDialog.addEventListener("cancel", event => {
+  if (parameterConfirmBusy) event.preventDefault();
+});
+parameterDialog.addEventListener("close", () => {
+  parameterConfirmAction = null;
+  parameterReturnFocus?.focus();
+  parameterReturnFocus = null;
 });
 goalCancel.addEventListener("click", () => goalDialog.close());
 goalCommit.addEventListener("click", () => {
