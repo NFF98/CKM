@@ -317,10 +317,11 @@ impl ParameterStore {
              JOIN local_goal_drafts g ON g.id=p.draft_id
              WHERE p.draft_id=?1 ORDER BY p.updated_at_ms DESC,p.id DESC"
         ).map_err(|_| err("DATABASE_READ_FAILED"))?;
-        stmt.query_map(params![draft_id], Self::from_row)
+        let items = stmt.query_map(params![draft_id], Self::from_row)
             .map_err(|_| err("DATABASE_READ_FAILED"))?
             .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|_| err("DATABASE_READ_FAILED"))
+            .map_err(|_| err("DATABASE_READ_FAILED"))?;
+        Ok(items)
     }
 
     /// User-entered private proposal. No input fields for source, state, event,
