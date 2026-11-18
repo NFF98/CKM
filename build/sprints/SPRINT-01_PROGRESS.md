@@ -138,3 +138,11 @@
 - **已知限制**：目前下載工作執行於 App process，Android 系統終止 App 時不保證背景繼續；重新開啟會從有效 .partial 續傳。耗電、真機內存、外部來源 HTTPS/redirect/Range、Wi-Fi 中斷與空間容量需要手機實際驗收，不可假稱 PASS。
 - **CI／真機**：Rust／TS 自動化與 Android Kotlin 編譯＋JUnit Range／SHA256 測試均已加到 CI；依最新結果標 PASS/FAIL。真正 2.59GB 下載和推論仍然 **NOT_RUN**。
 - **APK 批次**：由先前測試備忘錄中的 B02 刪除、B03 OCR＋Gemma、自動下載、B04 目標確認、B05 同義概念一起驗收，**不是每一項重出一個 APK**。先確認本 PR CI、Kotlin 測試，再產出一次 Android ARM64 測試 APK。
+
+## B03 Gemma 首輪手機推論 FAIL 修正（2026-11-18）
+
+- **使用者回報的真實 Android 測試 Evidence**：已自動下載 Gemma 4 E2B；對私人日文單字「パクる」按「用手機 Gemma 理解」時，App 顯示 **「模型輸出無法核對原文」**（舊版錯誤碼 `MODEL_INVALID_OUTPUT`）。屬於 B03 模型回答／Rust Output Validation 真機 **FAIL**；不可標為 B03 PASS。此錯誤表示模型輸出通過 native 呼叫到 Rust save 階段，但無原始模型回答可判定具體哪個條件違反；不應宣稱已確定是 JSON fence 或 hallucination。
+- **程式問題**：原 Rust `serde_json::from_str` 嚴格只接受裸 JSON、`evidenceQuote` 必填且逐字匹配；小型模型輸出 Markdown fence、普通敘述、漏掉 quote、日文引用標點都會無差別回 `MODEL_INVALID_OUTPUT`。
+- **修正方案（PR #12）**：只有私人建議可以接受短普通文字及 fenced JSON；如果模型沒給 evidenceQuote，Rust 自私人收藏原文（或本人更正後的 OCR）擷取不超過 80 字原文。若模型**明確給錯引用**，仍拒絕；多餘未知 JSON 欄位（含 Goal、Consent）、偽造確認／公開欄位仍拒絕；OCR 修改後舊提示仍失效。明確區分格式錯誤／原文引用不符／越權欄位，方便下一次真機回報。Android Gemma 提示詞更短且預算 384 tokens，減少 JSON 被截斷的風險。所有候選仍是 `suggested_private`，不會自行建立 Intent／分享。
+- **回歸測試**：保存單字「パクる」後接受合法 JSON、fenced JSON、普通說明、由 Rust 原文擷取 quote；錯的 quote／偽造 Consent 或 Goal／格式破損皆拒絕。先跑 Rust/TS 和 Android Kotlin compile-only CI；**新版 APK 尚未打包**，避免每修一個問題就產生一次 APK。手機修正結果保持 NOT_RUN。
+- **模型檔處理**：此為 Rust/提示詞修正，不改官方模型 SHA、大小或路徑，不應要求使用者重新下載模型。下次使用同簽章同 application ID 升級安裝時，原 App 私人檔應保留；若解除安裝或清除 App 資料則可能被刪除。
