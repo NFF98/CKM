@@ -475,6 +475,9 @@ async function renderOcrEditor(assetId: string): Promise<void> {
         if (selectedAssetId === assetId) {
           displayOcr(result);
           state.textContent = "人工修正已在手機保存；原始辨識結果仍保留，沒有建立 Goal。";
+          // 來源變更後不可繼續顯示舊模型建議。
+          preview.querySelector(".model-panel")?.remove();
+          void renderModelPanel(assetId);
         }
       } catch (error) {
         if (selectedAssetId === assetId) state.textContent = errorMessage(error);
@@ -621,8 +624,7 @@ checkButton.addEventListener("click", () => { void runBridgeCheck(); });
 textButton.addEventListener("click", () => { void savePrivateText(); });
 pickButton.addEventListener("click", () => imagePicker.click());
 cameraButton.addEventListener("click", () => cameraPicker.click());
-get("#reload-drops").addEventListener("click", () => { void refreshDrops();
-void refreshModelStatus(); });
+get("#reload-drops").addEventListener("click", () => { void refreshDrops(); });
 importModelButton.addEventListener("click", () => {
   if (importModelButton.disabled) return;
   importModelButton.disabled = true;
@@ -665,3 +667,4 @@ cameraPicker.addEventListener("change", () => {
 });
 
 void refreshDrops();
+void refreshModelStatus();
