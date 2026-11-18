@@ -101,3 +101,13 @@ textarea {
   font-weight: 700; cursor: pointer;
 }
 .danger:disabled { opacity: .6; cursor: wait; }
+
+/* B03 OCR：不把 OCR 結果當作已確認目標，並允許人工修正。 */
+.ocr-panel { margin-top: 18px; padding-top: 14px; border-top: 1px solid #dde8e6; }
+.ocr-panel h3 { margin: 0 0 10px; }
+.ocr-panel .ocr-raw {
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto;
+  padding: 12px; background: #f7faf9; border-radius: 10px; font-size: 15px; line-height: 1.5;
+}
+.ocr-panel .field-label textarea { margin-top: 8px; }
+.ocr-panel .primary, .ocr-panel .secondary { min-height: 48px; }
