@@ -152,6 +152,15 @@ fn list_concept_registry() -> Vec<parameter_registry::RegistryConcept> {
     parameter_registry::registry()
 }
 
+/// Read-only Rust normalization; front-end never decides N2 concept identity.
+#[tauri::command]
+fn preview_parameter_concept(
+    concept_alias: String,
+    value: Option<String>,
+) -> Result<parameter_registry::ParameterPreview, String> {
+    parameter_registry::preview_parameter(concept_alias, value)
+}
+
 /// Only a confirmed B04 private Goal draft can own these private proposals.
 /// No model, source, event, visibility, consent or matching fields are writable.
 #[tauri::command]
@@ -200,6 +209,7 @@ pub fn run() {
             load_private_goal_draft,
             confirm_private_goal,
             list_concept_registry,
+            preview_parameter_concept,
             save_parameter_proposal,
             list_parameter_proposals,
             confirm_private_parameter,
