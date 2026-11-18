@@ -68,3 +68,7 @@ jobs:
         working-directory: build/app/src-tauri/gen/android
         run: |
           ./gradlew :tauri-plugin-cakami-ocr:compileDebugKotlin :tauri-plugin-cakami-model:compileDebugKotlin --no-daemon --stacktrace
+      - name: Gemma 自動下載 Range／SHA256 Kotlin 單元測試（不打包 APK）
+        working-directory: build/app/src-tauri/gen/android
+        run: |
+          ./gradlew :tauri-plugin-cakami-model:testDebugUnitTest --no-daemon --stacktrace

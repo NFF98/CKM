@@ -83,12 +83,12 @@ B03 目前已提交 Rust ↔ Android Kotlin LiteRT-LM ↔ SQLite 的 Coding，�
 
 - **Runtime**：`com.google.ai.edge.litertlm:litertlm-android:0.16.1`，Android CPU-first；鎖版是為了相容 Tauri 模板所使用的 Kotlin 2.2.x 編譯器。不得換成 `latest.release` 造成不可重現建置。
 - **來源**：[Hugging Face 官方 LiteRT Community / Gemma 4 E2B](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/main/gemma-4-E2B-it.litertlm)；正確檔名：`gemma-4-E2B-it.litertlm`，約 2.59 GB。SHA-256：`181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c`。
-- **不含在 APK 中**：因體積龐大且節省重複編譯／下載，使用者**自行從官方來源取得**檔案，於 Android App 點「從手機檔案匯入 Gemma 模型」。使用 Android SAF Picker，複製至 App-private storage 時串流計算 SHA-256；不符拒絕，無任何自動下載／雲端推論。
+- **不含在 APK 中、但也不需手動下載**：首次開啟 Android App 時會先檢查模型是否已存在；缺少時自動經非計量網路（通常 Wi-Fi）從官方固定版本 HTTPS 下載。使用者不必自己找檔案、註冊 Hugging Face 或用 SAF 選檔。若只有行動數據，App 等待 Wi-Fi，使用者也可明確點選「改用行動網路下載 2.59 GB」。模型依序寫入 App-private `.partial`、支援 HTTP Range 續傳；完成後驗證精確 2,588,147,712 bytes 與 SHA-256，成功才標為已安裝。未經驗證絕不推論；舊 SAF Command 僅保留向後相容，不在消費者畫面顯示。
 - **AI 使用入口**：收藏圖片 → 真正 Android 本地 OCR 或手動修正；或直接保存文字 → 點「用手機 Gemma 理解這筆內容」。僅將該收藏在本機 SQLite 的已保存文字交給 Kotlin LiteRT-LM；原圖不會傳給模型以外的端點，不會上傳任何私人內容。
 - **防 AI 捏造**：只接受嚴格 JSON（`evidenceQuote/contentHint/uncertainty`），其中 `evidenceQuote` 必須逐字存在於原文。Rust 拒絕其他欄位、假 `Goal`／`Consent`／`CONFIRMED`，建議只存 SQLite `local_model_suggestions` 且 `status=suggested_private`，不會發布配對意圖。
 - **資料失效**：更正 OCR 或刪除原圖後，舊模型建議不再可見；刪圖時 SQLite 外鍵級聯清除模型建議。
-- **平台限制**：Android API 26 起允許匯入；iOS／desktop 暫未提供原生 LiteRT-LM Adapter，明確顯示不可用。真機 RAM、CPU 初始化時間、輸出品質尚未驗證。
-- **目前待驗證**：Android Kotlin/Gradle compile-only CI、裝置 SHA256 匯入、首次／再次推論、飛航模式、錯誤 JSON、模型不完整與拒絕載入、離線無外傳、120 秒超時與低 RAM、模型結果／來源與 SQLite 重啟持久化。
+- **平台限制**：Android API 26 以上支援自動下載。iOS／desktop 尚無原生 LiteRT-LM Adapter；Gemma CPU 真機 RAM、初始化時間與輸出品質尚未驗證。下載目前是 App 進程內執行：**App 被系統結束時不保證背景繼續，但下次打開會從已保留的 `.partial` 續傳**。不會偷換 Cloud AI。
+- **目前待驗證**：Kotlin/Gradle 編譯及 Range/SHA 單元測試、首次從官方 HTTPS 下載完整 2.59 GB、Wi-Fi/行動網路限制、斷線／重啟續傳、空間不足、錯誤 Hash、下載完成後關網再推論、模型 RAM/時間／JSON 輸出。**Android 實機執行前保持 NOT_RUN**。
 - **批次策略**：這輪不打包、不提供新 APK；維持「至少兩個可驗收功能一起打包一次」原則。Android Gradle 編譯檢查也不會產生 APK Artifact。
 
 ## B04｜Content ≠ Goal 私人草稿 Gate（S1-AC04，PR #9）
@@ -115,3 +115,12 @@ B05 是 S1-AC05 / T01–T04 的「**概念與私人參數 Gate**」，**不是**
 - **Model Boundary**：OCR／Gemma 仍只有私有內容建議；模型輸出的 `CONFIRMED`、假 event／Consent 欄位不會透過 B05 API 寫入合法確認事件。模型不存在／無法載入時可以純手動輸入條件，不宣稱 B03 AI 驗收完成。
 - **批次真機待測**：三個 N2 同義詞只成一個，UNKNOWN 無法確認、版本衝突、過去時間與缺日期拒絕、取消不寫、真正本人確認／重開保留、Goal 修改後候選失效、刪來源清空 Evidence／Confirmation、飛航模式、本機無網路上傳。結果登記至 `build/sprints/SPRINT-01_PROGRESS.md`，Android 手機未跑前一律 `NOT_RUN`。
 - **APK**：不因這次 B05 Coding 單獨建新 APK，至少兩個獨立功能與單元測試一起具備驗收條件才打包。
+
+## B03 UX 改進｜Gemma 一站式自動下載（2026-11-18）
+
+- **使用者流程**：安裝輕量 APK → 第一次開啟時有 Wi-Fi 就自動從 [LiteRT Community 官方倉庫](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm) 安全下載 2.59 GB 模型 → 顯示已下載 MB / % → 驗證 SHA-256 → 啟用「用手機 Gemma 理解這筆內容」。不需帳號、不需找下載連結、不需手動匯入。
+- **可靠性**：使用不可變 revision `6e5c4f1e395deb959c494953478fa5cec4b8008f`；檔案長度 `2,588,147,712` bytes；驗證 SHA-256 `181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c`；HttpURLConnection HTTPS + TLS、HTTP Range 和 Content-Range 驗證；CDN 不支援續傳回 200 則安全重下，不把資料 append 錯位；.partial 留在手機私有空間；SHA 不符刪除部分檔案，絕不標為 Ready。
+- **隱私與流量**：網路連線只從手機 **下載公開模型**，不把任何用戶照片、OCR、文字、Goal 或 prompt 上傳。預設只在非計量網路自動進行；行動網路有單獨按鈕，使用者自行明確決定；可暫停。模型下載完成後，原有推論完全離線。
+- **真機限制**：目前使用 App process 內的單獨執行緒；若 App 被系統終止，下載可能停止，下次開啟仍可續傳（不宣稱背景下載一定成功）。Android API 26+；需要足夠可用空間。Android WebView／HTTPS 重導向／官方伺服器完整行為需真機驗證。
+- **單元測試**：Kotlin 原生 JUnit 覆蓋正常分段續傳／不合法 Content-Range／不支援 Range 安全重啟／SHA256；TS Contract 覆蓋自動下載觸發、行動網路 opt-in、暫停與假 Ready 拒絕。真實 2.59 GB 下载與 LiteRT CPU 初始化必須等 Android 真機驗收，不可只算 Kotlin 編譯。
+- **批次 APK**：與 B02 刪除、B03 OCR／本地推論、B04 Goal Gate、B05 Registry 一起測試，不為這一個功能單獨重打 APK。

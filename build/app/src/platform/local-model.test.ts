@@ -1,13 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import { importModel, loadModelSuggestion, modelStatus, parseModelStatus, proposeModel } from "./local-model";
+import {
+  importModel, loadModelSuggestion, modelStatus, parseModelStatus, proposeModel,
+  prepareModel, pauseModelDownload
+} from "./local-model";
 
 const id = "2bc595b3-a0e4-4254-bc8f-200b1b0f19a2";
 const ready = {
   installed: true,
   modelId: "gemma-4-E2B-it",
   runtime: "litert-lm-android-0.16.1",
-  bytes: 2_590_000_000,
+  bytes: 2_588_147_712,
   integrityVerified: true,
+  downloadState: "ready",
+  downloadedBytes: 2_588_147_712,
+  totalBytes: 2_588_147_712,
+  downloadError: null,
 };
 const proposal = {
   assetId: id,
@@ -25,10 +32,48 @@ const proposal = {
 describe("B03 本地 Gemma 4 E2B Model Contract", () => {
   it("只能讀真實 Rust 模型狀態，未安裝不裝作已安裝", async () => {
     const invoke = vi.fn().mockResolvedValue({
-      ...ready, installed: false, bytes: 0, integrityVerified: false
+      ...ready, installed: false, bytes: 0, integrityVerified: false,
+      downloadState: "idle", downloadedBytes: 0
     });
     expect((await modelStatus(invoke)).installed).toBe(false);
     expect(invoke).toHaveBeenCalledWith("local_model_status");
+  });
+
+  it("首次開啟只從 Rust 啟動官方模型下載，不送使用者內容", async () => {
+    const downloading = { ...ready, installed: false, bytes: 0, integrityVerified: false,
+      downloadState: "downloading", downloadedBytes: 1_048_576 };
+    const invoke = vi.fn().mockResolvedValue(downloading);
+    await expect(prepareModel(invoke)).resolves.toEqual(downloading);
+    expect(invoke).toHaveBeenCalledWith("prepare_local_model", { allowMetered: false });
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("行動數據只能由本人明確操作，不能預設消耗", async () => {
+    const waiting = { ...ready, installed: false, bytes: 0, integrityVerified: false,
+      downloadState: "waiting_wifi", downloadedBytes: 0 };
+    const invoke = vi.fn().mockResolvedValue(waiting);
+    await prepareModel(invoke, true);
+    expect(invoke).toHaveBeenCalledWith("prepare_local_model", { allowMetered: true });
+  });
+
+  it("暫停後保留 partial 進度；不會誤報下載完成", async () => {
+    const paused = { ...ready, installed: false, bytes: 0, integrityVerified: false,
+      downloadState: "paused", downloadedBytes: 1_500_000_000 };
+    const invoke = vi.fn().mockResolvedValue(paused);
+    const status = await pauseModelDownload(invoke);
+    expect(status.downloadState).toBe("paused");
+    expect(status.downloadedBytes).toBe(1_500_000_000);
+    expect(invoke).toHaveBeenCalledWith("pause_local_model_download");
+  });
+
+  it("SHA 未驗證、假完成、超額進度一律拒絕", () => {
+    for(const invalid of [
+      { ...ready, downloadedBytes: 2_588_147_713 },
+      { ...ready, downloadState: "downloading" },
+      { ...ready, installed: false, bytes: 0, integrityVerified: false,
+        downloadState: "ready" },
+      { ...ready, downloadError: 123 },
+    ]) expect(() => parseModelStatus(invalid)).toThrow("Contract");
   });
 
   it("使用 Android 原生 SAF 匯入，不向 WebView 洩漏本機模型路徑", async () => {

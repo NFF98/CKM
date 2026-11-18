@@ -101,7 +101,26 @@ fn local_model_status(app: tauri::AppHandle) -> Result<tauri_plugin_cakami_model
     tauri_plugin_cakami_model::status(&app)
 }
 
-/// 使用 Android SAF 讓本人選擇既有 Gemma 檔案並校驗 SHA-256；絕不自動下載。
+/// 首次開啟由 UI 呼叫：App 會自動取得官方固定版本的 Gemma 檔。
+/// 預設只允許非計量網路；使用者可明確允許行動網路。
+/// 僅下載公開模型權重，不傳送任何私人照片、OCR、文字或 AI prompt。
+#[tauri::command]
+fn prepare_local_model(
+    app: tauri::AppHandle,
+    allow_metered: bool,
+) -> Result<tauri_plugin_cakami_model::ModelStatus, String> {
+    tauri_plugin_cakami_model::prepare(&app, allow_metered)
+}
+
+#[tauri::command]
+fn pause_local_model_download(
+    app: tauri::AppHandle,
+) -> Result<tauri_plugin_cakami_model::ModelStatus, String> {
+    tauri_plugin_cakami_model::pause(&app)
+}
+
+/// 舊版 SAF 選檔相容入口，正常使用者流程完全不需要手動匯入。
+
 #[tauri::command]
 async fn import_local_model(app: tauri::AppHandle) -> Result<tauri_plugin_cakami_model::ModelStatus, String> {
     tauri::async_runtime::spawn_blocking(move || tauri_plugin_cakami_model::import_model(&app))
@@ -203,6 +222,8 @@ pub fn run() {
             load_ocr,
             correct_ocr,
             local_model_status,
+            prepare_local_model,
+            pause_local_model_download,
             import_local_model,
             local_model_propose,
             load_model_suggestion,

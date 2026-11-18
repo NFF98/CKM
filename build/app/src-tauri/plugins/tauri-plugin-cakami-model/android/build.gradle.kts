@@ -34,4 +34,5 @@ dependencies {
     // 0.17+ 的 metadata 2.4 須 Kotlin 2.3+，不可無審核改成 latest.release。
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.16.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    testImplementation("junit:junit:4.13.2")
 }

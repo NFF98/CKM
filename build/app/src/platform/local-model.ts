@@ -6,6 +6,11 @@ export interface ModelStatus {
   runtime: string;
   bytes: number;
   integrityVerified: boolean;
+  downloadState: "idle" | "waiting_wifi" | "downloading" | "verifying" |
+    "ready" | "paused" | "error" | "unavailable";
+  downloadedBytes: number;
+  totalBytes: number;
+  downloadError: string | null;
 }
 
 export interface ModelSuggestion {
@@ -35,7 +40,19 @@ export function parseModelStatus(value: unknown): ModelStatus {
       typeof v.runtime !== "string" || !v.runtime.startsWith("litert-lm") ||
       !Number.isSafeInteger(v.bytes) || Number(v.bytes) < 0 ||
       typeof v.integrityVerified !== "boolean" ||
-      (v.installed && (!v.integrityVerified || Number(v.bytes) < 2_000_000_000))) {
+      !["idle", "waiting_wifi", "downloading", "verifying", "ready", "paused", "error", "unavailable"]
+        .includes(String(v.downloadState)) ||
+      !Number.isSafeInteger(v.downloadedBytes) ||
+      !Number.isSafeInteger(v.totalBytes) ||
+      Number(v.totalBytes) !== 2_588_147_712 ||
+      Number(v.downloadedBytes) < 0 ||
+      Number(v.downloadedBytes) > Number(v.totalBytes) ||
+      (v.downloadError !== null && typeof v.downloadError !== "string") ||
+      (v.installed && (!v.integrityVerified ||
+        Number(v.bytes) !== Number(v.totalBytes) ||
+        v.downloadState !== "ready")) ||
+      (!v.installed && (v.integrityVerified || Number(v.bytes) !== 0)) ||
+      (v.downloadState === "ready" && !v.installed)) {
     throw new Error("本地模型狀態 Contract 錯誤");
   }
   return v as unknown as ModelStatus;
@@ -64,6 +81,19 @@ export async function modelStatus(invoke: InvokeAdapter): Promise<ModelStatus> {
   return parseModelStatus(await invoke("local_model_status"));
 }
 
+/** First launch automatically initiates unmetered download. Returns immediately. */
+export async function prepareModel(
+  invoke: InvokeAdapter, allowMetered = false
+): Promise<ModelStatus> {
+  return parseModelStatus(await invoke("prepare_local_model", { allowMetered }));
+}
+
+/** User may pause a large transfer without deleting the verified partial bytes. */
+export async function pauseModelDownload(invoke: InvokeAdapter): Promise<ModelStatus> {
+  return parseModelStatus(await invoke("pause_local_model_download"));
+}
+
+/** Deprecated manual fallback, not exposed in the consumer interface. */
 export async function importModel(invoke: InvokeAdapter): Promise<ModelStatus> {
   return parseModelStatus(await invoke("import_local_model"));
 }
