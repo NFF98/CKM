@@ -1147,16 +1147,76 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = LocalStore::open(dir.path()).unwrap();
         let saved = store.save(text_drop("パクる")).unwrap();
-        for json in [
-            r#"{"evidenceQuote":"不存在","contentHint":null,"uncertainty":null}"#,
-            r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"consent":true}"#,
-            r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"goal":"Study Match"}"#,
-            "not valid JSON",
+        for (json, code) in [
+            (r#"{"evidenceQuote":"不存在","contentHint":null,"uncertainty":null}"#,
+             "MODEL_EVIDENCE_MISMATCH"),
+            (r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"consent":true}"#,
+             "MODEL_OUTPUT_FORMAT"),
+            (r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"goal":"Study Match"}"#,
+             "MODEL_OUTPUT_FORMAT"),
+            (r#"{"contentHint":"bad", "visibility":"public"}"#,
+             "MODEL_OUTPUT_FORMAT"),
+            ("{\"contentHint\":", "MODEL_OUTPUT_FORMAT"),
+            ("Consent: true; Goal: match this person", "MODEL_OUTPUT_UNAPPROVED_FIELDS"),
         ] {
             assert_eq!(store.save_model_suggestion(&saved.id, "パクる", model_reply(json))
-                       .unwrap_err(), "MODEL_INVALID_OUTPUT");
+                       .unwrap_err(), code);
         }
         assert!(store.load_model_suggestion(&saved.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn b03_phone_regression_japanese_word_fenced_json_is_validated_and_private() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        let reply = model_reply("```json\n{\"evidenceQuote\":\"「パクる」\",\"contentHint\":\"模仿或抄襲、偷竊（視語境）\",\"uncertainty\":null}\n```");
+        let result = store.save_model_suggestion(&saved.id, "パクる", reply).unwrap();
+        assert_eq!(result.status, "suggested_private");
+        assert_eq!(result.evidence_quote, "パクる");
+        assert_eq!(result.content_hint.as_deref(), Some("模仿或抄襲、偷竊（視語境）"));
+        assert_eq!(store.load_model_suggestion(&saved.id).unwrap().unwrap().status,
+                   "suggested_private");
+    }
+
+    #[test]
+    fn b03_phone_regression_japanese_word_freeform_hint_can_be_saved_privately() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        let result = store.save_model_suggestion(
+            &saved.id, "パクる", model_reply("「パクる」は日常語，表示模仿、抄襲或偷竊。"),
+        ).unwrap();
+        assert_eq!(result.evidence_quote, "パクる");
+        assert_eq!(result.status, "suggested_private");
+        assert!(result.uncertainty.unwrap().contains("一般文字"));
+    }
+
+    #[test]
+    fn b03_phone_regression_missing_model_quote_is_sourced_by_rust_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        let reply = model_reply(r#"{"contentHint":"抄襲或偷竊","uncertainty":null}"#);
+        let result = store.save_model_suggestion(&saved.id, "パクる", reply).unwrap();
+        assert_eq!(result.evidence_quote, "パクる");
+        assert_eq!(result.content_hint.as_deref(), Some("抄襲或偷竊"));
+    }
+
+    #[test]
+    fn b03_phone_regression_no_untrusted_reply_is_allowed_to_invent_evidence() {
+        assert_eq!(
+            parse_private_model_reply("パクる", r#"{"evidenceQuote":"勉強します","contentHint":"foo","uncertainty":null}"#)
+                .unwrap_err(), "MODEL_EVIDENCE_MISMATCH"
+        );
+        assert_eq!(
+            parse_private_model_reply("パクる", "{\"contentHint\":\"not closed\"")
+                .unwrap_err(), "MODEL_OUTPUT_FORMAT"
+        );
+        assert_eq!(
+            parse_private_model_reply("パクる", "```json\n{\"contentHint\": \"x\"}\n```\nExtra")
+                .unwrap_err(), "MODEL_OUTPUT_FORMAT"
+        );
     }
 
     #[test]
