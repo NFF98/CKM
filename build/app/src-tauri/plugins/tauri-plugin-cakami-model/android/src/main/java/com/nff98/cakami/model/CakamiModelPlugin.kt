@@ -120,17 +120,18 @@ class CakamiModelPlugin(private val activity: Activity): Plugin(activity) {
                     return@execute
                 }
                 val available = StatFs(modelDir.absolutePath).availableBytes
-                if (available < MAX_SIZE + 128L * 1024L * 1024L && available < 2_800_000_000L) {
+                if (available < 2_800_000_000L) {
                     invoke.reject("MODEL_NO_SPACE")
                     return@execute
                 }
-                temp = File.createTempFile("gemma-e2b-", ".partial", modelDir)
+                val staging = File.createTempFile("gemma-e2b-", ".partial", modelDir)
+                temp = staging
                 val digest = MessageDigest.getInstance("SHA-256")
                 var length = 0L
                 val input = activity.contentResolver.openInputStream(uri)
                     ?: throw IllegalStateException("stream unavailable")
                 input.use { source ->
-                    FileOutputStream(temp).use { output ->
+                    FileOutputStream(staging).use { output ->
                         val buffer = ByteArray(1024 * 1024)
                         while (true) {
                             val n = source.read(buffer)
@@ -146,7 +147,7 @@ class CakamiModelPlugin(private val activity: Activity): Plugin(activity) {
                         output.fd.sync()
                     }
                 }
-                val hex = digest.digest().joinToString("") { "%02x".format(it) }
+                val hex = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }
                 if (length !in MIN_SIZE..MAX_SIZE || hex != SHA256) {
                     invoke.reject("MODEL_HASH_MISMATCH")
                     return@execute
@@ -160,7 +161,7 @@ class CakamiModelPlugin(private val activity: Activity): Plugin(activity) {
                     invoke.reject("MODEL_IMPORT_FAILED")
                     return@execute
                 }
-                if (!temp.renameTo(model)) {
+                if (!staging.renameTo(model)) {
                     invoke.reject("MODEL_IMPORT_FAILED")
                     return@execute
                 }
