@@ -431,3 +431,7 @@ impl ParameterStore {
             .ok_or_else(|| err("DATABASE_READ_FAILED"))
     }
 }
+
+#[cfg(test)]
+#[path = "parameter_registry_tests.rs"]
+mod tests;
