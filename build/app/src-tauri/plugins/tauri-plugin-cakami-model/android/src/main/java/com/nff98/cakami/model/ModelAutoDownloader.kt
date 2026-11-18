@@ -146,6 +146,17 @@ internal class ModelAutoDownloader(
         }
         var start = staging.takeIf { it.isFile }?.length() ?: 0L
         if (start > expectedSize) { staging.delete(); start = 0L }
+        // If the process died after installing the verified model but before the
+        // tiny checksum marker was committed, recover it without re-downloading 2.59 GB.
+        if (model.isFile && model.length() == expectedSize && !checksum.isFile) {
+            state = "verifying"
+            if (ModelDownloadWirePolicy.matchesSha256(model, expectedHash)) {
+                writeMarker()
+                transferred = expectedSize
+                staging.delete()
+                return
+            }
+        }
         requireSpace(expectedSize - start)
         if (start < expectedSize) {
             if (pauseRequested.get()) throw DownloadPaused()
@@ -166,23 +177,32 @@ internal class ModelAutoDownloader(
                     start, code, conn.getHeaderField("Content-Range"), expectedSize,
                 )
                 if (!append) {
+                    // A server can ignore Range. Discard partial first to reclaim disk
+                    // space before checking capacity for a complete restart.
+                    if (staging.exists() && !staging.delete()) {
+                        throw IOException("Cannot reset partial")
+                    }
                     start = 0L
                     requireSpace(expectedSize)
                 }
                 transferred = start
                 conn.inputStream.use { input ->
                     FileOutputStream(staging, append).use { output ->
-                        val buf = ByteArray(256 * 1024)
-                        while (true) {
-                            if (pauseRequested.get()) throw DownloadPaused()
-                            if (!hasNetwork(allowMetered)) throw IOException("Network changed")
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            if (transferred + n > expectedSize) throw HashMismatch()
-                            output.write(buf, 0, n)
-                            transferred += n
+                        try {
+                            val buf = ByteArray(256 * 1024)
+                            while (true) {
+                                if (pauseRequested.get()) throw DownloadPaused()
+                                if (!hasNetwork(allowMetered)) throw IOException("Network changed")
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                if (transferred + n > expectedSize) throw HashMismatch()
+                                output.write(buf, 0, n)
+                                transferred += n
+                            }
+                        } finally {
+                            // Keep resume bytes durable on network interruption/pause.
+                            output.fd.sync()
                         }
-                        output.fd.sync()
                     }
                 }
             } finally { conn.disconnect() }
@@ -198,11 +218,15 @@ internal class ModelAutoDownloader(
         }
         if (model.exists() && !model.delete()) throw IOException("Cannot replace invalid model")
         if (!staging.renameTo(model)) throw IOException("Cannot install model")
+        writeMarker()
+        transferred = expectedSize
+    }
+
+    private fun writeMarker() {
         val tmp = File(model.parentFile, checksum.name + ".tmp")
         tmp.writeText(expectedHash)
         if (checksum.exists() && !checksum.delete()) throw IOException("Cannot replace checksum")
         if (!tmp.renameTo(checksum)) throw IOException("Cannot mark model verified")
-        transferred = expectedSize
     }
 
     private class DownloadPaused : IOException()
