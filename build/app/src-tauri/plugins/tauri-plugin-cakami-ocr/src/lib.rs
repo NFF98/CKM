@@ -18,7 +18,7 @@ pub struct OcrRequest {
     pub base64: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OcrSegment {
     pub text: String,
