@@ -146,6 +146,7 @@ const errors: Record<string, string> = {
   ASSET_NOT_FOUND: "找不到這筆私人收藏，可能已被刪除。請重新整理。",
   INVALID_ASSET_ID: "收藏識別碼無效，操作已取消。",
   STORAGE_DELETE_FAILED: "手機無法刪除圖片；原收藏已保留，請稍後重試。",
+  STORAGE_CLEANUP_PENDING: "收藏紀錄已移除，但私人圖片清理尚未完成；請關閉並重新開啟 App 重試清理。",
   STORAGE_RECOVERY_FAILED: "私人收藏檔案需要修復；尚未確認刪除成功，請重新開啟 App。",
   STORAGE_RECOVERY_REQUIRED: "刪除中途發生資料庫錯誤，請重新開啟 App 確認結果。",
   DATABASE_READ_FAILED: "私人資料庫讀取失敗，請稍後再試。",
