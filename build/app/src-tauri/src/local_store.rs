@@ -544,6 +544,128 @@ impl LocalStore {
         }
     }
 
+
+    /// Rust-only: load trusted app-private text (or local OCR / user correction).
+    pub fn model_input_for_asset(&self, id: &str) -> Result<String, String> {
+        let uuid = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        let conn = self.connect()?;
+        let row: Option<(String, Option<String>)> = conn.query_row(
+            "SELECT kind,text_content FROM local_assets WHERE id=?1",
+            params![uuid], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        let (kind, text) = row.ok_or_else(|| store_error("ASSET_NOT_FOUND"))?;
+        let raw = match kind.as_str() {
+            "text" => text.unwrap_or_default(),
+            "image" => {
+                let ocr = self.load_ocr(&uuid)?;
+                ocr.corrected_text.filter(|v| !v.trim().is_empty())
+                    .or_else(|| ocr.raw_text.filter(|v| !v.trim().is_empty()))
+                    .ok_or_else(|| store_error("MODEL_INPUT_UNKNOWN"))?
+            }
+            _ => return Err(store_error("MODEL_INPUT_UNKNOWN")),
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(store_error("MODEL_INPUT_UNKNOWN"));
+        }
+        if trimmed.len() > 8192 {
+            return Err(store_error("MODEL_INPUT_TOO_LARGE"));
+        }
+        Ok(trimmed.to_owned())
+    }
+
+    /// Model output never confirms a Goal/Need/Offer. Reject unknown JSON keys and
+    /// any quote that is not a literal substring of the private source.
+    pub fn save_model_suggestion(
+        &self, id: &str, original_input: &str, native: NativeReply,
+    ) -> Result<ModelSuggestion, String> {
+        let uuid = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?
+            .to_string();
+        if native.model_id != "gemma-4-E2B-it"
+            || native.runtime != "litert-lm-android-0.16.1"
+            || native.backend != "cpu"
+            || native.raw_text.len() > 8192
+        {
+            return Err(store_error("MODEL_INVALID_OUTPUT"));
+        }
+        let raw: RawSuggestion = serde_json::from_str(native.raw_text.trim())
+            .map_err(|_| store_error("MODEL_INVALID_OUTPUT"))?;
+        let quote = raw.evidence_quote.trim();
+        if quote.is_empty() || quote.chars().count() > 80
+            || !original_input.contains(quote)
+            || raw.content_hint.as_ref().is_some_and(|v| v.chars().count() > 200)
+            || raw.uncertainty.as_ref().is_some_and(|v| v.chars().count() > 160)
+        {
+            return Err(store_error("MODEL_INVALID_OUTPUT"));
+        }
+        let sha = format!("{:x}", Sha256::digest(original_input.as_bytes()));
+        let now = clock_ms()?;
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| store_error("DATABASE_BUSY"))?;
+        // Check latest source under the SQLite write lock to reject stale model replies.
+        let row: Option<(String, Option<String>)> = tx.query_row(
+            "SELECT kind, text_content FROM local_assets WHERE id=?1",
+            params![uuid], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        let current = match row {
+            Some((kind, text)) if kind == "text" => text.unwrap_or_default().trim().to_owned(),
+            Some((kind, _)) if kind == "image" => tx.query_row(
+                "SELECT coalesce(nullif(trim(corrected_text),''),nullif(trim(raw_text),''),'')
+                 FROM local_ocr WHERE asset_id=?1",
+                params![uuid], |row| row.get::<_, String>(0),
+            ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?
+                .unwrap_or_default(),
+            _ => return Err(store_error("ASSET_NOT_FOUND")),
+        };
+        if current != original_input {
+            return Err(store_error("MODEL_STALE_INPUT"));
+        }
+        tx.execute(
+            "INSERT INTO local_model_suggestions
+             (asset_id,status,source_sha256,evidence_quote,content_hint,uncertainty,
+              model_id,runtime,backend,elapsed_ms,updated_at_ms)
+             VALUES (?1,'suggested_private',?2,?3,?4,?5,?6,?7,?8,?9,?10)
+             ON CONFLICT(asset_id) DO UPDATE SET
+               source_sha256=excluded.source_sha256,
+               evidence_quote=excluded.evidence_quote,
+               content_hint=excluded.content_hint,
+               uncertainty=excluded.uncertainty,
+               model_id=excluded.model_id,
+               runtime=excluded.runtime,
+               backend=excluded.backend,
+               elapsed_ms=excluded.elapsed_ms,
+               updated_at_ms=excluded.updated_at_ms",
+            params![uuid, sha, quote, raw.content_hint, raw.uncertainty, native.model_id,
+                    native.runtime, native.backend, native.elapsed_ms as i64, now],
+        ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        tx.commit().map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        self.load_model_suggestion(&uuid)?
+            .ok_or_else(|| store_error("DATABASE_READ_FAILED"))
+    }
+
+    /// Old AI guesses become invisible once the user corrects OCR text.
+    pub fn load_model_suggestion(&self, id: &str) -> Result<Option<ModelSuggestion>, String> {
+        let uuid = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        let input = self.model_input_for_asset(&uuid)?;
+        let sha = format!("{:x}", Sha256::digest(input.as_bytes()));
+        let conn = self.connect()?;
+        conn.query_row(
+            "SELECT asset_id,status,evidence_quote,content_hint,uncertainty,
+                    model_id,runtime,backend,elapsed_ms,updated_at_ms
+             FROM local_model_suggestions WHERE asset_id=?1 AND source_sha256=?2",
+            params![uuid, sha],
+            |row| Ok(ModelSuggestion {
+                asset_id: row.get(0)?, status: row.get(1)?,
+                evidence_quote: row.get(2)?, content_hint: row.get(3)?,
+                uncertainty: row.get(4)?, model_id: row.get(5)?,
+                runtime: row.get(6)?, backend: row.get(7)?,
+                elapsed_ms: row.get::<_, i64>(8)?.max(0) as u64,
+                updated_at_ms: row.get(9)?,
+            }),
+        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))
+    }
+
     pub fn list(&self) -> Result<Vec<DropSummary>, String> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(&format!(
