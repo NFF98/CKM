@@ -9,6 +9,7 @@ import {
   saveText,
   type ImageSource,
 } from "./platform/local-drops";
+import { correctOcr, loadOcr, recognizeOcr, type OcrRecord } from "./platform/local-ocr";
 import "./styles.css";
 
 type View = "drop" | "diagnostic";
@@ -70,8 +71,8 @@ root.innerHTML = `
         </dialog>
 
         <div class="note boundary">
-          <strong>B03 本地 AI 尚未接入</strong>
-          <p>目前僅保存你提供的原始內容。尚未執行 OCR、沒有產生 Goal、Need、Offer，也沒有發布配對 Intent。</p>
+          <strong>B03｜日文 OCR 建置中；Gemma E2B 尚未接入</strong>
+          <p>圖片可以由 Android 裝置的本地 OCR 辨識，結果必須經真機驗收。人工修正只改私人文字，不會自動產生 Goal、Need、Offer 或配對 Intent，也不會上傳原圖。</p>
         </div>
         <button type="button" class="secondary" id="go-diagnostic">檢查裝置端 Rust 連線</button>
       </section>
@@ -150,6 +151,15 @@ const errors: Record<string, string> = {
   STORAGE_RECOVERY_FAILED: "私人收藏檔案需要修復；尚未確認刪除成功，請重新開啟 App。",
   STORAGE_RECOVERY_REQUIRED: "刪除中途發生資料庫錯誤，請重新開啟 App 確認結果。",
   DATABASE_READ_FAILED: "私人資料庫讀取失敗，請稍後再試。",
+  OCR_MODEL_UNAVAILABLE: "此裝置尚未提供 OCR 模型，請直接輸入人工修正。",
+  OCR_RECOGNITION_FAILED: "手機本地 OCR 辨識失敗，請重試或人工輸入。",
+  OCR_INVALID_INPUT: "圖片辨識輸入無效，請重新選擇圖片。",
+  OCR_INVALID_RESULT: "本地 OCR 回傳資料不合法，沒有採用辨識結果。",
+  OCR_IMAGE_REQUIRED: "這不是圖片收藏，不需 OCR。",
+  OCR_IMAGE_TOO_LARGE: "圖片像素過大，手機無法安全辨識；可人工輸入文字。",
+  OCR_IMAGE_INVALID: "無法解析圖片內容，請直接人工輸入。",
+  OCR_OUT_OF_MEMORY: "手機記憶體不足，已停止辨識；可人工輸入文字。",
+  MODEL_UNAVAILABLE: "Gemma E2B 尚未安裝，不會使用雲端 AI 替代。",
 };
 
 function errorMessage(error: unknown): string {
@@ -271,6 +281,101 @@ async function deleteSelected(): Promise<void> {
   }
 }
 
+
+/** B03：只讀本機 SQLite；圖片原始 OCR 與本人人工更正分離。 */
+async function renderOcrEditor(assetId: string): Promise<void> {
+  if (selectedAssetId !== assetId) return;
+  const panel = document.createElement("section");
+  panel.className = "ocr-panel";
+  panel.setAttribute("aria-label", "日文 OCR 與人工修正");
+
+  const heading = document.createElement("h3");
+  heading.textContent = "裝置端日文 OCR";
+  const state = document.createElement("p");
+  state.className = "status";
+  state.setAttribute("role", "status");
+  state.setAttribute("aria-live", "polite");
+  const recognized = document.createElement("pre");
+  recognized.className = "ocr-raw";
+  const run = document.createElement("button");
+  run.type = "button";
+  run.className = "secondary";
+  run.textContent = "用手機辨識日文";
+
+  const field = document.createElement("label");
+  field.className = "field-label";
+  field.textContent = "人工修正辨識文字（私人）";
+  const correction = document.createElement("textarea");
+  correction.rows = 4;
+  correction.placeholder = "辨識錯誤或無結果時，可自行輸入日文；這不是配對 Goal。";
+  field.append(correction);
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "primary";
+  save.textContent = "保存人工修正";
+  const privacy = document.createElement("p");
+  privacy.className = "fineprint";
+  privacy.textContent = "OCR／更正只存於手機。Gemma E2B 尚未接入，不會猜測學習目標或使用雲端 AI。";
+  panel.append(heading, state, recognized, run, field, save, privacy);
+  preview.append(panel);
+
+  function displayOcr(record: OcrRecord): void {
+    state.textContent = record.status === "recognized"
+      ? "已辨識日文（請核對）；" + (record.engineVersion || "") + " · " + (record.elapsedMs ?? "?") + " ms"
+      : record.status === "unknown"
+        ? "OCR 未辨識到可靠文字（UNKNOWN），可人工輸入。"
+        : "尚未執行 OCR，可點擊辨識或直接人工輸入。";
+    recognized.textContent = record.rawText || "（沒有 OCR 原始文字）";
+    correction.value = record.correctedText ?? record.rawText ?? "";
+  }
+
+  try {
+    displayOcr(await loadOcr(rust, assetId));
+  } catch (error) {
+    if (selectedAssetId === assetId) state.textContent = errorMessage(error);
+  }
+  if (selectedAssetId !== assetId) return;
+
+  run.addEventListener("click", () => {
+    if (selectedAssetId !== assetId) return;
+    run.disabled = true;
+    save.disabled = true;
+    state.textContent = "手機本地 OCR 辨識中，不會把原圖送往雲端…";
+    void (async () => {
+      try {
+        const result = await recognizeOcr(rust, assetId);
+        if (selectedAssetId === assetId) displayOcr(result);
+      } catch (error) {
+        if (selectedAssetId === assetId) state.textContent = errorMessage(error);
+      } finally {
+        run.disabled = false;
+        save.disabled = false;
+      }
+    })();
+  });
+
+  save.addEventListener("click", () => {
+    if (selectedAssetId !== assetId) return;
+    run.disabled = true;
+    save.disabled = true;
+    state.textContent = "正在保存人工修正到手機 SQLite…";
+    void (async () => {
+      try {
+        const result = await correctOcr(rust, assetId, correction.value);
+        if (selectedAssetId === assetId) {
+          displayOcr(result);
+          state.textContent = "人工修正已在手機保存；原始辨識結果仍保留，沒有建立 Goal。";
+        }
+      } catch (error) {
+        if (selectedAssetId === assetId) state.textContent = errorMessage(error);
+      } finally {
+        run.disabled = false;
+        save.disabled = false;
+      }
+    })();
+  });
+}
+
 async function openAsset(id: string): Promise<void> {
   selectedAssetId = id;
   preview.hidden = false;
@@ -290,6 +395,7 @@ async function openAsset(id: string): Promise<void> {
       img.alt = asset.summary.fileName || "私人圖片";
       img.src = `data:${asset.summary.mimeType};base64,${asset.dataBase64}`;
       preview.append(img);
+      await renderOcrEditor(id);
     } else {
       const content = document.createElement("pre");
       content.className = "asset-text";
