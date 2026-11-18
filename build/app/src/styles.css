@@ -111,3 +111,11 @@ textarea {
 }
 .ocr-panel .field-label textarea { margin-top: 8px; }
 .ocr-panel .primary, .ocr-panel .secondary { min-height: 48px; }
+
+/* B03 Gemma E2B：私有建議與原文證據，避免用 UI 假裝已確認 Goal。 */
+.model-panel { margin-top: 18px; border-top: 1px solid #dde8e6; padding-top: 14px; }
+.model-panel h3 { margin: 0 0 10px; }
+.model-output { font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.model-output p { border-left: 3px solid #c8d9d6; padding-left: 10px; }
+.model-panel .secondary { min-height: 48px; }
+.note a { color: #0f766e; overflow-wrap: anywhere; }
