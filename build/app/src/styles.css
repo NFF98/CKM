@@ -133,3 +133,20 @@ textarea {
 #goal-dialog .delete-dialog-actions { grid-template-columns: 1fr; }
 #goal-dialog .delete-dialog-actions .primary { margin: 0; }
 #goal-dialog .delete-dialog-actions button { min-height: 48px; }
+
+/* B05 — 私人參數 Registry。固定時段必須由本人選擇完整日期。 */
+.parameter-panel { margin-top: 18px; padding-top: 14px; border-top: 1px solid #dde8e6; }
+.parameter-panel h3 { margin-bottom: 10px; }
+.parameter-panel input, .parameter-panel select {
+  display: block; box-sizing: border-box; width: 100%; min-height: 48px;
+  padding: 11px 12px; margin-top: 8px;
+  background: white; border: 1px solid #c8d9d6; border-radius: 12px;
+  color: #102124; font: inherit;
+}
+.parameter-panel .field-label[hidden] { display: none; }
+.parameter-list { list-style: none; margin: 16px 0 0; padding: 0; }
+.parameter-list li { padding: 12px 0; border-top: 1px solid #dde8e6; }
+.parameter-label { font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+.parameter-panel button { min-height: 48px; }
+#parameter-dialog .delete-dialog-actions { grid-template-columns: 1fr; }
+#parameter-dialog .delete-dialog-actions .primary { margin-bottom: 0; }
