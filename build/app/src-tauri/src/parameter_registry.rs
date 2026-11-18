@@ -234,7 +234,7 @@ impl ParameterStore {
                 version INTEGER NOT NULL CHECK(version >= 1),
                 created_at_ms INTEGER NOT NULL,
                 updated_at_ms INTEGER NOT NULL,
-                CHECK((expiry_policy='fixed' AND expires_at_ms > 0)
+                CHECK((expiry_policy='fixed' AND expires_at_ms IS NOT NULL AND expires_at_ms > 0)
                     OR (expiry_policy='intent_lifecycle' AND expires_at_ms IS NULL)),
                 CHECK((state='CONFIRMED' AND confirmed_event_id IS NOT NULL)
                     OR (state!='CONFIRMED' AND confirmed_event_id IS NULL)),
@@ -242,7 +242,7 @@ impl ParameterStore {
                        AND value_json IS NULL AND registry_version=0)
                     OR (concept_id='study.jlpt_level' AND value_type='enum'
                         AND registry_version=1
-                        AND ((value_json='\"N2\"' AND state IN ('OBSERVED','CONFIRMED'))
+                        AND ((value_json IS NOT NULL AND value_json='\"N2\"' AND state IN ('OBSERVED','CONFIRMED'))
                           OR (value_json IS NULL AND state='UNKNOWN'))))
              );
              CREATE TABLE IF NOT EXISTS local_parameter_confirmation_events (
