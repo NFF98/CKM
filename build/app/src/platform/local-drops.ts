@@ -107,3 +107,15 @@ export async function listDrops(invoke: InvokeAdapter): Promise<DropSummary[]> {
 export async function loadDrop(invoke: InvokeAdapter, id: string): Promise<DropDetail> {
   return parseDropDetail(await invoke("load_drop", { id }));
 }
+
+
+/** 刪除只能指定 Rust 已產生的 UUID；只有明確的 true 才視為成功。 */
+export async function deleteDrop(invoke: InvokeAdapter, id: string): Promise<void> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    throw new Error("INVALID_ASSET_ID");
+  }
+  const result = await invoke("delete_drop", { id });
+  if (result !== true) {
+    throw new Error("Rust 本地刪除回傳 Contract 錯誤");
+  }
+}
