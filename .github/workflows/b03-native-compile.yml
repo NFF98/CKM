@@ -32,7 +32,7 @@ jobs:
           packages: 'platform-tools'
       - name: 安裝 Android Gradle SDK
         run: |
-          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          sdkmanager --install 'platforms;android-35' 'platforms;android-36' 'build-tools;35.0.0'
       - uses: dtolnay/rust-toolchain@stable
       - name: 安裝 Tauri 開發依賴
         working-directory: build/app
@@ -40,13 +40,31 @@ jobs:
       - name: 生成 Android 專案（不建 APK）
         working-directory: build/app
         run: npx tauri android init --ci
-      - name: 驗證兩個本地插件存在於 Gradle
+      - name: 解析 Tauri Kotlin 核心來源（不執行 Android Bundle）
+        run: |
+          cargo metadata --format-version 1 --manifest-path build/app/src-tauri/Cargo.toml > /tmp/b03-metadata.json
+          TAURI_MANIFEST=$(jq -r '.packages[] | select(.name=="tauri") | .manifest_path' /tmp/b03-metadata.json | head -n1)
+          test -n "$TAURI_MANIFEST"
+          TAURI_ANDROID_DIR="$(dirname "$TAURI_MANIFEST")/mobile/android"
+          test -f "$TAURI_ANDROID_DIR/build.gradle.kts"
+          echo "TAURI_ANDROID_DIR=$TAURI_ANDROID_DIR" >> "$GITHUB_ENV"
+      - name: 建立僅三個 Library 的臨時 Gradle 設定
         working-directory: build/app/src-tauri/gen/android
         run: |
-          ./gradlew projects --no-daemon > /tmp/b03-gradle-projects.txt
-          cat /tmp/b03-gradle-projects.txt
-          grep -q 'tauri-plugin-cakami-ocr' /tmp/b03-gradle-projects.txt
-          grep -q 'tauri-plugin-cakami-model' /tmp/b03-gradle-projects.txt
-      - name: 編譯 Kotlin Plugin（不打包 APK）
+          # init 不產生 tauri.settings.gradle；這個檢查不修改 repo 或產出 APK。
+          cat > settings.gradle <<'EOF'
+          rootProject.name = 'ckm-native-compile-check'
+          include ':tauri-android'
+          include ':tauri-plugin-cakami-ocr'
+          include ':tauri-plugin-cakami-model'
+          EOF
+          cat >> settings.gradle <<EOF
+          project(':tauri-android').projectDir = new File("$TAURI_ANDROID_DIR")
+          project(':tauri-plugin-cakami-ocr').projectDir = new File("$GITHUB_WORKSPACE/build/app/src-tauri/plugins/tauri-plugin-cakami-ocr/android")
+          project(':tauri-plugin-cakami-model').projectDir = new File("$GITHUB_WORKSPACE/build/app/src-tauri/plugins/tauri-plugin-cakami-model/android")
+          EOF
+          ./gradlew projects --no-daemon
+      - name: 只編譯 Android ML Kit 與 Gemma Kotlin 插件（沒有 APK）
         working-directory: build/app/src-tauri/gen/android
-        run: ./gradlew compileDebugKotlin --no-daemon --stacktrace
+        run: |
+          ./gradlew :tauri-plugin-cakami-ocr:compileDebugKotlin :tauri-plugin-cakami-model:compileDebugKotlin --no-daemon --stacktrace
