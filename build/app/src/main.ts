@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { checkBridge, type InvokeAdapter } from "./platform/bridge";
 import {
   MAX_IMAGE_BYTES,
+  deleteDrop,
   loadDrop,
   listDrops,
   saveImage,
@@ -57,6 +58,17 @@ root.innerHTML = `
           <div id="drop-preview" class="preview" hidden aria-live="polite"></div>
         </section>
 
+        <dialog id="delete-dialog" class="confirm-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
+          <h2 id="delete-title">確定要刪除這筆收藏？</h2>
+          <p id="delete-description">這項操作無法復原。確認後，手機內的收藏紀錄與對應私人圖片會一起刪除，不會影響原本相簿中的照片。</p>
+          <p id="delete-item" class="delete-item"></p>
+          <p id="delete-status" class="status" role="status" aria-live="polite"></p>
+          <div class="delete-dialog-actions">
+            <button type="button" class="secondary" id="cancel-delete">取消</button>
+            <button type="button" class="danger" id="confirm-delete">確認刪除</button>
+          </div>
+        </dialog>
+
         <div class="note boundary">
           <strong>B03 本地 AI 尚未接入</strong>
           <p>目前僅保存你提供的原始內容。尚未執行 OCR、沒有產生 Goal、Need、Offer，也沒有發布配對 Intent。</p>
@@ -104,9 +116,17 @@ const pickButton = get<HTMLButtonElement>("#choose-image");
 const cameraButton = get<HTMLButtonElement>("#take-photo");
 const imagePicker = get<HTMLInputElement>("#image-picker");
 const cameraPicker = get<HTMLInputElement>("#camera-picker");
+const deleteDialog = get<HTMLDialogElement>("#delete-dialog");
+const deleteItem = get<HTMLElement>("#delete-item");
+const deleteStatus = get<HTMLElement>("#delete-status");
+const cancelDelete = get<HTMLButtonElement>("#cancel-delete");
+const confirmDelete = get<HTMLButtonElement>("#confirm-delete");
 
 const rust: InvokeAdapter = (command, args) => invoke(command, args);
 let saving = false;
+let selectedAssetId: string | null = null;
+let deleteTarget: import("./platform/local-drops").DropSummary | null = null;
+let deleteReturnFocus: HTMLElement | null = null;
 
 const errors: Record<string, string> = {
   EMPTY_TEXT: "請先輸入文字；空白不會被存成收藏。",
@@ -122,7 +142,13 @@ const errors: Record<string, string> = {
   DATABASE_BUSY: "私人資料庫忙碌，請稍後再試。",
   DATABASE_WRITE_FAILED: "收藏未完成，請再試一次。",
   STORAGE_READ_FAILED: "內容讀取失敗，請稍後再試。",
-  ASSET_FILE_MISSING: "找不到已保存的圖片，請回報這個錯誤。",
+  ASSET_FILE_MISSING: "找不到已保存的圖片。資料庫紀錄未被刪除，請回報這個錯誤。",
+  ASSET_NOT_FOUND: "找不到這筆私人收藏，可能已被刪除。請重新整理。",
+  INVALID_ASSET_ID: "收藏識別碼無效，操作已取消。",
+  STORAGE_DELETE_FAILED: "手機無法刪除圖片；原收藏已保留，請稍後重試。",
+  STORAGE_RECOVERY_FAILED: "私人收藏檔案需要修復；尚未確認刪除成功，請重新開啟 App。",
+  STORAGE_RECOVERY_REQUIRED: "刪除中途發生資料庫錯誤，請重新開啟 App 確認結果。",
+  DATABASE_READ_FAILED: "私人資料庫讀取失敗，請稍後再試。",
 };
 
 function errorMessage(error: unknown): string {
@@ -150,6 +176,9 @@ function updateBusy(isBusy: boolean): void {
   textButton.disabled = isBusy;
   pickButton.disabled = isBusy;
   cameraButton.disabled = isBusy;
+  for (const button of recentList.querySelectorAll<HTMLButtonElement>(".delete-action")) {
+    button.disabled = isBusy;
+  }
 }
 
 function assertNative(): void {
@@ -184,7 +213,17 @@ async function refreshDrops(): Promise<void> {
       subtitle.textContent = `${new Date(item.createdAtMs).toLocaleString("zh-TW")} · ${item.byteLength} bytes${item.isDuplicate ? " · 與先前內容重複" : ""}`;
       button.append(title, subtitle);
       button.addEventListener("click", () => { void openAsset(item.id); });
-      li.append(button);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "delete-action";
+      remove.textContent = "刪除";
+      remove.setAttribute("aria-label", "刪除這筆私人收藏");
+      remove.disabled = saving;
+      remove.addEventListener("click", () => requestDelete(item));
+      const row = document.createElement("div");
+      row.className = "asset-row";
+      row.append(button, remove);
+      li.append(row);
       recentList.append(li);
     }
   } catch (error) {
@@ -192,7 +231,47 @@ async function refreshDrops(): Promise<void> {
   }
 }
 
+/** 刪除入口：確認視窗，不會直接呼叫 Rust；取消時沒有任何資料寫入。 */
+function requestDelete(item: import("./platform/local-drops").DropSummary): void {
+  if (saving || deleteDialog.open) return;
+  deleteTarget = item;
+  deleteReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  deleteItem.textContent = item.kind === "image"
+    ? '圖片：' + (item.fileName || "未命名")
+    : '文字：' + (item.textExcerpt || "私人筆記");
+  deleteStatus.textContent = "";
+  deleteDialog.showModal();
+}
+
+async function deleteSelected(): Promise<void> {
+  const item = deleteTarget;
+  if (!item || saving) return;
+  updateBusy(true);
+  confirmDelete.disabled = true;
+  cancelDelete.disabled = true;
+  deleteStatus.textContent = "正在從手機刪除私人收藏…";
+  try {
+    assertNative();
+    await deleteDrop(rust, item.id);
+    if (selectedAssetId === item.id) {
+      selectedAssetId = null;
+      preview.replaceChildren();
+      preview.hidden = true;
+    }
+    deleteDialog.close();
+    saveStatus.textContent = "私人收藏已刪除；重新開啟 App 後不應再次出現。";
+    await refreshDrops();
+  } catch (error) {
+    deleteStatus.textContent = errorMessage(error);
+  } finally {
+    updateBusy(false);
+    confirmDelete.disabled = false;
+    cancelDelete.disabled = false;
+  }
+}
+
 async function openAsset(id: string): Promise<void> {
+  selectedAssetId = id;
   preview.hidden = false;
   preview.replaceChildren();
   const heading = document.createElement("h3");
@@ -202,6 +281,7 @@ async function openAsset(id: string): Promise<void> {
   preview.append(heading, waiting);
   try {
     const asset = await loadDrop(rust, id);
+    if (selectedAssetId !== id) return;
     waiting.remove();
     if (asset.summary.kind === "image" && asset.dataBase64) {
       const img = document.createElement("img");
@@ -220,7 +300,7 @@ async function openAsset(id: string): Promise<void> {
     note.textContent = "這是你自己保存的內容，尚未產生找學伴 Goal，也沒有分享。";
     preview.append(note);
   } catch (error) {
-    waiting.textContent = errorMessage(error);
+    if (selectedAssetId === id) waiting.textContent = errorMessage(error);
   }
 }
 
@@ -324,6 +404,16 @@ textButton.addEventListener("click", () => { void savePrivateText(); });
 pickButton.addEventListener("click", () => imagePicker.click());
 cameraButton.addEventListener("click", () => cameraPicker.click());
 get("#reload-drops").addEventListener("click", () => { void refreshDrops(); });
+cancelDelete.addEventListener("click", () => deleteDialog.close());
+confirmDelete.addEventListener("click", () => { void deleteSelected(); });
+deleteDialog.addEventListener("cancel", (event) => {
+  if (saving) event.preventDefault();
+});
+deleteDialog.addEventListener("close", () => {
+  deleteTarget = null;
+  deleteReturnFocus?.focus();
+  deleteReturnFocus = null;
+});
 
 imagePicker.addEventListener("change", () => {
   const file = imagePicker.files?.[0];
