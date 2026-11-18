@@ -82,6 +82,16 @@ fn image_type(bytes: &[u8]) -> Option<(&'static str, &'static str)> {
     }
 }
 
+
+fn extension_for_mime(mime_type: &str) -> Result<&'static str, String> {
+    match mime_type {
+        "image/png" => Ok("png"),
+        "image/jpeg" => Ok("jpg"),
+        "image/webp" => Ok("webp"),
+        _ => Err(store_error("UNSUPPORTED_OR_CORRUPT_IMAGE")),
+    }
+}
+
 fn summary_from_row(row: &Row<'_>) -> rusqlite::Result<DropSummary> {
     let byte_length: i64 = row.get(5)?;
     let text: Option<String> = row.get(7)?;
@@ -127,7 +137,10 @@ impl LocalStore {
              CREATE INDEX IF NOT EXISTS idx_assets_fingerprint ON local_assets(sha256);",
         )
         .map_err(|_| store_error("DATABASE_MIGRATION_FAILED"))?;
-        Ok(Self { root: root.to_path_buf() })
+        let store = Self { root: root.to_path_buf() };
+        // 每次重新開啟儲存時修復中斷的刪除操作；以 SQLite 寫入鎖序列化恢復。
+        store.recover_pending_deletes()?;
+        Ok(store)
     }
 
     fn connect(&self) -> Result<Connection, String> {
@@ -239,6 +252,120 @@ impl LocalStore {
         })
     }
 
+
+    /// SQLite 與檔案系統沒有跨資源交易：檔案先更名為暫存檔；
+    /// 若 DB 尚有紀錄則恢復，若紀錄已刪除則清理暫存檔。
+    /// 只處理 Rust UUID 命名的本地圖片，忽略未知檔案，避免碰觸其他資料。
+    fn recover_pending_deletes(&self) -> Result<(), String> {
+        let private_dir = self.root.join("private_assets");
+        let pending_dir = private_dir.join(".pending_deletes");
+        if !pending_dir.exists() {
+            return Ok(());
+        }
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| store_error("DATABASE_BUSY"))?;
+        for entry in fs::read_dir(&pending_dir)
+            .map_err(|_| store_error("STORAGE_RECOVERY_FAILED"))?
+        {
+            let entry = entry.map_err(|_| store_error("STORAGE_RECOVERY_FAILED"))?;
+            let name = entry.file_name().into_string()
+                .map_err(|_| store_error("STORAGE_RECOVERY_FAILED"))?;
+            let Some((id, ext)) = name.rsplit_once('.') else { continue };
+            if !matches!(ext, "png" | "jpg" | "webp")
+                || Uuid::parse_str(id).map(|uuid| uuid.to_string() != id).unwrap_or(true)
+            {
+                continue;
+            }
+            if !entry.file_type().map_err(|_| store_error("STORAGE_RECOVERY_FAILED"))?.is_file() {
+                return Err(store_error("STORAGE_RECOVERY_FAILED"));
+            }
+            let mime: Option<String> = tx.query_row(
+                "SELECT mime_type FROM local_assets WHERE id=?1 AND kind='image'",
+                params![id], |row| row.get(0),
+            ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+            match mime {
+                Some(mime_type) => {
+                    if extension_for_mime(&mime_type)? != ext {
+                        return Err(store_error("STORAGE_RECOVERY_FAILED"));
+                    }
+                    let original = private_dir.join(&name);
+                    if original.exists() {
+                        return Err(store_error("STORAGE_RECOVERY_FAILED"));
+                    }
+                    fs::rename(entry.path(), original)
+                        .map_err(|_| store_error("STORAGE_RECOVERY_FAILED"))?;
+                }
+                None => {
+                    fs::remove_file(entry.path())
+                        .map_err(|_| store_error("STORAGE_RECOVERY_FAILED"))?;
+                }
+            }
+        }
+        tx.commit().map_err(|_| store_error("DATABASE_WRITE_FAILED"))
+    }
+
+    /// B02：按 UUID 刪除單一私人收藏。不可由 WebView 指定任何磁碟路徑。
+    /// 成功回傳 true；失敗不會對外宣稱刪除成功。
+    pub fn delete(&self, id: &str) -> Result<bool, String> {
+        let id = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?
+            .to_string();
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| store_error("DATABASE_BUSY"))?;
+        let asset: Option<(String, String)> = tx.query_row(
+            "SELECT kind, mime_type FROM local_assets WHERE id=?1",
+            params![id], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        let (kind, mime_type) = asset.ok_or_else(|| store_error("ASSET_NOT_FOUND"))?;
+
+        // 同一筆圖片有自己的 UUID 檔名，重複圖片也不共用檔案。
+        let staged = if kind == "image" {
+            let ext = extension_for_mime(&mime_type)?;
+            let private_dir = self.root.join("private_assets");
+            let pending_dir = private_dir.join(".pending_deletes");
+            fs::create_dir_all(&pending_dir)
+                .map_err(|_| store_error("STORAGE_DELETE_FAILED"))?;
+            let name = format!("{id}.{ext}");
+            let original = private_dir.join(&name);
+            let pending = pending_dir.join(&name);
+            if pending.exists() {
+                return Err(store_error("STORAGE_RECOVERY_FAILED"));
+            }
+            fs::rename(&original, &pending).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    store_error("ASSET_FILE_MISSING")
+                } else {
+                    store_error("STORAGE_DELETE_FAILED")
+                }
+            })?;
+            Some((original, pending))
+        } else {
+            None
+        };
+
+        // BEGIN IMMEDIATE 讓兩個同時的刪除請求不會互相踩資料。
+        let write = tx.execute("DELETE FROM local_assets WHERE id=?1", params![id]);
+        if !matches!(write, Ok(1)) {
+            drop(tx); // rollback before restoring the file
+            if let Some((original, pending)) = &staged {
+                fs::rename(pending, original)
+                    .map_err(|_| store_error("STORAGE_RECOVERY_FAILED"))?;
+            }
+            return Err(store_error("DATABASE_WRITE_FAILED"));
+        }
+        if tx.commit().is_err() {
+            // commit 不確定時，交由下次 open 對照 SQLite 決定還原／清理。
+            return Err(store_error("STORAGE_RECOVERY_REQUIRED"));
+        }
+
+        if let Some((_, pending)) = staged {
+            // DB 已提交成功；若磁碟清理失敗，下一次 open 會再清理孤兒暫存檔。
+            let _ = fs::remove_file(pending);
+        }
+        Ok(true)
+    }
+
     pub fn list(&self) -> Result<Vec<DropSummary>, String> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(&format!(
@@ -265,12 +392,7 @@ impl LocalStore {
         let (summary, text) = maybe.ok_or_else(|| store_error("ASSET_NOT_FOUND"))?;
 
         let data_base64 = if summary.kind == "image" {
-            let ext = match summary.mime_type.as_str() {
-                "image/png" => "png",
-                "image/jpeg" => "jpg",
-                "image/webp" => "webp",
-                _ => return Err(store_error("UNSUPPORTED_OR_CORRUPT_IMAGE")),
-            };
+            let ext = extension_for_mime(&summary.mime_type)?;
             let path = self.root.join("private_assets")
                 .join(format!("{}.{ext}", validated_id));
             let mut file = fs::File::open(path)
@@ -423,4 +545,112 @@ mod tests {
         input.kind = "consent".into();
         assert_eq!(store.save(input).unwrap_err(), "UNSUPPORTED_DROP_KIND");
     }
+
+    #[test]
+    fn b02_delete_text_and_restart_keeps_it_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        assert!(store.delete(&saved.id).unwrap());
+        assert_eq!(store.load(&saved.id).unwrap_err(), "ASSET_NOT_FOUND");
+        drop(store);
+        let reopened = LocalStore::open(dir.path()).unwrap();
+        assert!(reopened.list().unwrap().is_empty());
+        assert_eq!(reopened.delete(&saved.id).unwrap_err(), "ASSET_NOT_FOUND");
+    }
+
+    #[test]
+    fn b02_delete_image_removes_file_and_row_after_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(png_drop(&tiny_png())).unwrap();
+        let image = dir.path().join("private_assets").join(format!("{}.png", saved.id));
+        assert!(image.exists());
+        assert!(store.delete(&saved.id).unwrap());
+        assert!(!image.exists());
+        drop(store);
+        let reopened = LocalStore::open(dir.path()).unwrap();
+        assert!(reopened.list().unwrap().is_empty());
+        assert_eq!(reopened.load(&saved.id).unwrap_err(), "ASSET_NOT_FOUND");
+    }
+
+    #[test]
+    fn b02_delete_duplicate_does_not_remove_sibling() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let first = store.save(png_drop(&tiny_png())).unwrap();
+        let second = store.save(png_drop(&tiny_png())).unwrap();
+        assert!(second.is_duplicate);
+        store.delete(&first.id).unwrap();
+        assert_eq!(store.list().unwrap().len(), 1);
+        assert_eq!(store.load(&second.id).unwrap().summary.id, second.id);
+    }
+
+    #[test]
+    fn b02_delete_invalid_id_cannot_escape_private_storage() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("留著")).unwrap();
+        assert_eq!(store.delete("../../secret").unwrap_err(), "INVALID_ASSET_ID");
+        assert!(store.load(&saved.id).is_ok());
+    }
+
+    #[test]
+    fn b02_missing_image_refuses_to_delete_database_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(png_drop(&tiny_png())).unwrap();
+        fs::remove_file(dir.path().join("private_assets").join(format!("{}.png", saved.id))).unwrap();
+        assert_eq!(store.delete(&saved.id).unwrap_err(), "ASSET_FILE_MISSING");
+        assert_eq!(store.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn b02_failed_sql_delete_restores_file_and_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(png_drop(&tiny_png())).unwrap();
+        let conn = store.connect().unwrap();
+        conn.execute_batch("CREATE TRIGGER prevent_delete BEFORE DELETE ON local_assets
+            BEGIN SELECT RAISE(ABORT, 'test failure'); END;").unwrap();
+        assert_eq!(store.delete(&saved.id).unwrap_err(), "DATABASE_WRITE_FAILED");
+        assert_eq!(store.load(&saved.id).unwrap().summary.id, saved.id);
+        let path = dir.path().join("private_assets").join(format!("{}.png", saved.id));
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn b02_recovery_restores_uncommitted_image_deletion() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(png_drop(&tiny_png())).unwrap();
+        let private_dir = dir.path().join("private_assets");
+        let pending_dir = private_dir.join(".pending_deletes");
+        fs::create_dir_all(&pending_dir).unwrap();
+        let name = format!("{}.png", saved.id);
+        fs::rename(private_dir.join(&name), pending_dir.join(&name)).unwrap();
+        drop(store);
+        let reopened = LocalStore::open(dir.path()).unwrap();
+        assert_eq!(reopened.load(&saved.id).unwrap().summary.id, saved.id);
+        assert!(!pending_dir.join(&name).exists());
+    }
+
+    #[test]
+    fn b02_recovery_purges_committed_image_deletion() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(png_drop(&tiny_png())).unwrap();
+        let private_dir = dir.path().join("private_assets");
+        let pending_dir = private_dir.join(".pending_deletes");
+        fs::create_dir_all(&pending_dir).unwrap();
+        let name = format!("{}.png", saved.id);
+        fs::rename(private_dir.join(&name), pending_dir.join(&name)).unwrap();
+        store.connect().unwrap().execute(
+            "DELETE FROM local_assets WHERE id=?1", params![saved.id]).unwrap();
+        drop(store);
+        let reopened = LocalStore::open(dir.path()).unwrap();
+        assert!(reopened.list().unwrap().is_empty());
+        assert!(!pending_dir.join(&name).exists());
+    }
+
 }
