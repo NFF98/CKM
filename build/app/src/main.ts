@@ -140,7 +140,7 @@ root.innerHTML = `
         <div class="diagnostic-panel">
           <p class="diagnostic-title">Rust Bridge</p>
           <p id="bridge-status" role="status" aria-live="polite">尚未執行檢查</p>
-          <p id="bridge-detail" class="detail">本地 AI 尚未接入。</p>
+          <p id="bridge-detail" class="detail">尚未檢查手機內的模型狀態。</p>
         </div>
         <button type="button" class="primary" id="check-bridge">執行連線檢查</button>
         <button type="button" class="secondary" id="back-home">返回開始</button>
@@ -1034,7 +1034,17 @@ async function runBridgeCheck(): Promise<void> {
   try {
     const result = await checkBridge(rust);
     status.textContent = "Rust Bridge 已回應";
-    detail.textContent = `平台：${result.platform} · 版本：${result.appVersion} · 不需網路：是 · 雲端 AI：禁用 · 本地 AI：尚未接入`;
+    const aiState: Record<typeof result.nativeAi, string> = {
+      model_verified: "Gemma 4 E2B 已安裝／校驗通過（推論仍須實測）",
+      downloading: "Gemma 正在下載或驗證",
+      waiting_wifi: "等待 Wi-Fi 下載 Gemma",
+      paused: "Gemma 下載已暫停",
+      download_error: "Gemma 模型下載有問題",
+      unavailable: "此裝置暫不支援 Gemma",
+      not_installed: "Gemma 尚未安裝",
+      status_error: "無法取得 Gemma 模型狀態（不代表未安裝）"
+    };
+    detail.textContent = `平台：${result.platform} · 版本：${result.appVersion} · Rust Bridge 不需網路：是 · 雲端 AI：禁用 · 本地 AI：${aiState[result.nativeAi]}`;
   } catch (error) {
     status.textContent = "Rust Bridge 檢查失敗";
     detail.textContent = errorMessage(error);
