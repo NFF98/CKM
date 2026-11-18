@@ -75,6 +75,6 @@
 - **資料與權限**：SQLite `local_ocr` 保存 rawText、人工更正、UNKNOWN、來源／segments／engine／elapsedMs；Rust 在每個 SQLite Connection 啟用 FK，刪除圖片時級聯清除 OCR／更正；人工修正不是 Goal／Consent 確認。
 - **GUI**：圖片預覽提供「用手機辨識日文」「保存人工修正」，可在未辨識／未知／錯誤時手動補文字，未連接的 E2B 顯示不可用。
 - **模型現狀**：Gemma E2B runtime／權重尚未加入；`local_model_propose` 明確回 `MODEL_UNAVAILABLE`，禁止 Cloud fallback。不能宣稱 B03 完成。
-- **自動測試**：新增 Rust OCR 持久化、UNKNOWN、錯誤／偽來源、外部刪除級聯；TS Command Contract、錯誤輸入與保密語義。[TypeScript 22/22、Rust 27/27 CI PASS](https://github.com/NFF98/CKM/actions/runs/44245049332)，[Harness PASS](https://github.com/NFF98/CKM/actions/runs/44245049356)。**尚未跑 Android Gradle／原生 Kotlin 編譯及真機**。
+- **自動測試**：新增 Rust OCR 持久化、UNKNOWN、錯誤／偽來源、外部刪除級聯；TS Command Contract、錯誤輸入與保密語義。[TypeScript 22/22、Rust 27/27 CI PASS](https://github.com/NFF98/CKM/actions/runs/44245049332)，[Harness PASS](https://github.com/NFF98/CKM/actions/runs/44245049356)。**尚未跑 Android Gradle／原生 Kotlin 編譯及真機**；[最新 Commit 的 TypeScript／Rust CI #44245448150 PASS](https://github.com/NFF98/CKM/actions/runs/44245448150)，[Harness #44245448135 PASS](https://github.com/NFF98/CKM/actions/runs/44245448135)。原生 Kotlin 20 秒超時處理已加入；最新 CI 仍不能代表 Android 編譯。
 - **待測**：Android Gradle plugin 原生編譯、離線 OCR／多行／錯字、部分或空白辨識、大小／記憶體限制、人工修正重啟保留、刪圖級聯、沒有網路請求、Gemma 本地推論。全部 NOT_RUN。
 - **APK 策略**：本輪只累積 Coding 和 Test Memo，不新增 APK；待批次條件滿足且使用者需要真機回歸時再打包。
