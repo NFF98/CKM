@@ -87,7 +87,8 @@ impl GoalStore {
                 visibility TEXT NOT NULL DEFAULT 'private'
                     CHECK(visibility='private'),
                 share_consent INTEGER NOT NULL DEFAULT 0 CHECK(share_consent=0),
-                confirmed_event_id TEXT NOT NULL,
+                confirmed_event_id TEXT NOT NULL REFERENCES local_goal_confirmation_events(id)
+                    DEFERRABLE INITIALLY DEFERRED,
                 source_sha256 TEXT NOT NULL CHECK(length(source_sha256)=64),
                 revision INTEGER NOT NULL CHECK(revision >= 1),
                 created_at_ms INTEGER NOT NULL,
@@ -369,6 +370,56 @@ mod tests {
         let events: i64 = conn.query_row("SELECT COUNT(*) FROM local_goal_confirmation_events", [],
             |r| r.get(0)).unwrap();
         assert_eq!((drafts, events), (0, 0));
+    }
+
+    #[test]
+    fn b04_model_suggestion_does_not_create_confirmed_goal() {
+        let dir = tempfile::tempdir().unwrap();
+        let assets = LocalStore::open(dir.path()).unwrap();
+        let a = assets.save(text("パクる JLPT N2")).unwrap();
+        let store = GoalStore::open(dir.path()).unwrap();
+        let model_output = crate::local_store::ModelSuggestion {
+            asset_id: a.id.clone(), status: "suggested_private".into(),
+            evidence_quote: "パクる".into(), content_hint: Some("日語單字".into()),
+            uncertainty: None, model_id: "gemma-4-E2B-it".into(),
+            runtime: "litert-lm-android-0.16.1".into(), backend: "cpu".into(),
+            elapsed_ms: 12, updated_at_ms: 0,
+        };
+        assert_eq!(model_output.status, "suggested_private");
+        assert!(store.load(&a.id).unwrap().is_none());
+        // 即使另有有效 AI 建議，也無法繞過本人明確確認。
+        let native = tauri_plugin_cakami_model::NativeReply {
+            raw_text: r#"{"evidenceQuote":"パクる","contentHint":"日語單字","uncertainty":null}"#.into(),
+            model_id: "gemma-4-E2B-it".into(), runtime: "litert-lm-android-0.16.1".into(),
+            backend: "cpu".into(), elapsed_ms: 12,
+        };
+        assets.save_model_suggestion(&a.id, "パクる JLPT N2", native).unwrap();
+        assert!(store.load(&a.id).unwrap().is_none());
+        let conn = store.connect().unwrap();
+        let cnt: i64 = conn.query_row("SELECT COUNT(*) FROM local_goal_confirmation_events",
+            [], |row| row.get(0)).unwrap();
+        assert_eq!(cnt, 0);
+    }
+
+    #[test]
+    fn b04_sqlite_requires_real_reference_to_confirmation_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let assets = LocalStore::open(dir.path()).unwrap();
+        let a = assets.save(text("パクる")).unwrap();
+        let store = GoalStore::open(dir.path()).unwrap();
+        let conn = store.connect().unwrap();
+        // SQLite 無法提交沒有對應 Rust-owned event 的 fake 私人草稿。
+        let result = conn.execute(
+            "INSERT INTO local_goal_drafts
+               (id,asset_id,goal_text,goal_state,intent_state,visibility,share_consent,
+                confirmed_event_id,source_sha256,revision,created_at_ms,updated_at_ms)
+             VALUES (?1,?2,'test','confirmed_by_user','draft_private','private',0,
+                     ?3,?4,1,1,1)",
+            params![Uuid::new_v4().to_string(),a.id,Uuid::new_v4().to_string(),
+                    "a".repeat(64)],
+        );
+        assert!(result.is_err());
+        assert!(store.load(&a.id).unwrap().is_none());
     }
 
     #[test]
