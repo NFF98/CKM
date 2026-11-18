@@ -170,6 +170,27 @@ fn validate_expiry(policy: &str, expires: Option<i64>, now: i64) -> Result<(), S
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParameterPreview {
+    pub concept_id: Option<String>,
+    pub value_type: String,
+    pub value_json: Option<String>,
+    pub state: String,
+    pub registry_version: i64,
+}
+
+pub fn preview_parameter(alias: String, value: Option<String>) -> Result<ParameterPreview,String> {
+    let result = normalize(&alias, value.as_deref())?;
+    Ok(ParameterPreview {
+        concept_id: result.concept_id.map(str::to_owned),
+        value_type: result.value_type.to_string(),
+        value_json: result.value_json,
+        state: result.state.to_string(),
+        registry_version: result.registry_version,
+    })
+}
+
 pub struct ParameterStore { path: PathBuf }
 
 impl ParameterStore {
