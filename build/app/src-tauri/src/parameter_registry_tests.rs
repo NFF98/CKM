@@ -123,11 +123,34 @@ fn t02_rust_and_sqlite_reject_missing_or_unauthorized_metadata() {
         "UPDATE local_parameter_drafts SET state='CONFIRMED'",
         "UPDATE local_parameter_drafts SET concept_id='unknown.new_parameter'",
         "UPDATE local_parameter_drafts SET value_json='\"N1\"'",
+        "UPDATE local_parameter_drafts SET value_json=NULL",
         "UPDATE local_parameter_drafts SET expiry_policy='fixed',expires_at_ms=NULL",
     ] {
         assert!(conn.execute(sql,[]).is_err(),"sqlite must block {sql}");
     }
     assert_eq!(store.list(&draft).unwrap()[0].id,proposal.id);
+}
+
+#[test]
+fn t02_missing_provenance_scope_expiry_is_rejected_by_rust_deserialization() {
+    let (_,_,draft)=setup();
+    let required=serde_json::json!({
+        "draftId":draft,
+        "expectedDraftRevision":1,
+        "conceptAlias":"N2",
+        "scope":"intent",
+        "expiryPolicy":"intent_lifecycle",
+        "expectedVersion":0
+    });
+    for missing in ["draftId","scope","expiryPolicy","expectedVersion"] {
+        let mut object=required.clone();
+        object.as_object_mut().unwrap().remove(missing);
+        assert!(serde_json::from_value::<SaveProposalInput>(object).is_err(),
+                "missing {missing} must be rejected");
+    }
+    let mut fake_source=required;
+    fake_source["source"]=serde_json::json!("model_inferred");
+    assert!(serde_json::from_value::<SaveProposalInput>(fake_source).is_err());
 }
 
 #[test]
