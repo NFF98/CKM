@@ -45,7 +45,7 @@ fn t04_aliases_n2_jlpt_n2_and_chinese_same_single_concept() {
     assert_eq!(first.id,third.id);
     assert_eq!(third.version,3);
     assert_eq!(store.list(&draft).unwrap().len(),1);
-    assert_eq!(store.registry().len(),1); // T-01 remaining whitelist not invented.
+    assert_eq!(registry().len(),1); // T-01 remaining whitelist not invented.
 }
 
 #[test]
