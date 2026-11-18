@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { listDrops, loadDrop, MAX_IMAGE_BYTES, parseDropSummary, saveImage, saveText } from "./local-drops";
+import { deleteDrop, listDrops, loadDrop, MAX_IMAGE_BYTES, parseDropSummary, saveImage, saveText } from "./local-drops";
 
 const asset = {
   id: "2bc595b3-a0e4-4254-bc8f-200b1b0f19a2",
@@ -68,6 +68,26 @@ describe("S1-AC02：本地 Drop Contract", () => {
       summary: asset, text: "パクる", dataBase64: null,
     });
     expect(invoke).toHaveBeenCalledWith("load_drop", { id: asset.id });
+  });
+
+  it("刪除只呼叫 Rust 私有儲存，明確成功後才回報", async () => {
+    const invoke = vi.fn().mockResolvedValue(true);
+    await expect(deleteDrop(invoke, asset.id)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith("delete_drop", { id: asset.id });
+  });
+
+  it("刪除不接受惡意路徑或非 UUID，Rust 不會被呼叫", async () => {
+    const invoke = vi.fn();
+    await expect(deleteDrop(invoke, "../../private")).rejects.toThrow("INVALID_ASSET_ID");
+    await expect(deleteDrop(invoke, "invalid")).rejects.toThrow("INVALID_ASSET_ID");
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("刪除失敗或 Rust 非 true 回應不得假稱成功", async () => {
+    const invoke = vi.fn().mockResolvedValue(false);
+    await expect(deleteDrop(invoke, asset.id)).rejects.toThrow("Contract");
+    invoke.mockRejectedValueOnce("STORAGE_DELETE_FAILED");
+    await expect(deleteDrop(invoke, asset.id)).rejects.toBe("STORAGE_DELETE_FAILED");
   });
 
   it("原圖內容 Contract 不接受用文字冒充圖片", async () => {
