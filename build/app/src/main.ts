@@ -17,6 +17,11 @@ import {
   proposeModel,
   type ModelSuggestion
 } from "./platform/local-model";
+import {
+  confirmPrivateGoal,
+  loadPrivateGoalDraft,
+  type PrivateGoalDraft
+} from "./platform/private-goal";
 import "./styles.css";
 
 type View = "drop" | "diagnostic";
@@ -73,6 +78,17 @@ root.innerHTML = `
           <p class="fineprint"><a href="https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/main/gemma-4-E2B-it.litertlm" target="_blank" rel="noopener noreferrer">模型官方檔案（自行下載）</a></p>
           <button type="button" class="secondary" id="import-model">從手機檔案匯入 Gemma 模型</button>
         </section>
+
+        <dialog id="goal-dialog" class="confirm-dialog" aria-labelledby="goal-dialog-title" aria-describedby="goal-dialog-explanation">
+          <h2 id="goal-dialog-title">確認這是你真正想做的事？</h2>
+          <p id="goal-dialog-explanation">只有你按下「確認我的 Goal」，Rust 才會建立或更新手機裡的私人意圖草稿與本人確認事件。這不會公開、尋找學伴或傳送資料。</p>
+          <p id="goal-confirm-summary" class="goal-confirm-summary"></p>
+          <p id="goal-confirm-status" role="status" aria-live="polite" class="status"></p>
+          <div class="delete-dialog-actions">
+            <button type="button" class="secondary" id="goal-cancel">返回修改</button>
+            <button type="button" class="primary" id="goal-commit">確認我的 Goal（只存私人草稿）</button>
+          </div>
+        </dialog>
         <dialog id="delete-dialog" class="confirm-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
           <h2 id="delete-title">確定要刪除這筆收藏？</h2>
           <p id="delete-description">這項操作無法復原。確認後，手機內的收藏紀錄與對應私人圖片會一起刪除，不會影響原本相簿中的照片。</p>
@@ -85,8 +101,8 @@ root.innerHTML = `
         </dialog>
 
         <div class="note boundary">
-          <strong>B03｜日文 OCR 建置中；Gemma E2B 尚未接入</strong>
-          <p>圖片可以由 Android 裝置的本地 OCR 辨識，結果必須經真機驗收。人工修正只改私人文字，不會自動產生 Goal、Need、Offer 或配對 Intent，也不會上傳原圖。</p>
+          <strong>B04｜Content 不等於 Goal</strong>
+          <p>圖片與文字只有「私人收藏」身分。本地 OCR／Gemma 可以提出內容建議，但不會自行建立找學伴目標。只有你親自輸入並確認 Goal，才會保存私人草稿；目前不會公開、配對或上傳。</p>
         </div>
         <button type="button" class="secondary" id="go-diagnostic">檢查裝置端 Rust 連線</button>
       </section>
@@ -138,12 +154,20 @@ const cancelDelete = get<HTMLButtonElement>("#cancel-delete");
 const confirmDelete = get<HTMLButtonElement>("#confirm-delete");
 const modelStatusView = get<HTMLElement>("#model-status");
 const importModelButton = get<HTMLButtonElement>("#import-model");
+const goalDialog = get<HTMLDialogElement>("#goal-dialog");
+const goalConfirmSummary = get<HTMLElement>("#goal-confirm-summary");
+const goalConfirmStatus = get<HTMLElement>("#goal-confirm-status");
+const goalCancel = get<HTMLButtonElement>("#goal-cancel");
+const goalCommit = get<HTMLButtonElement>("#goal-commit");
 
 const rust: InvokeAdapter = (command, args) => invoke(command, args);
 let saving = false;
 let selectedAssetId: string | null = null;
 let deleteTarget: import("./platform/local-drops").DropSummary | null = null;
 let deleteReturnFocus: HTMLElement | null = null;
+let goalConfirmAction: (() => Promise<void>) | null = null;
+let goalConfirmBusy = false;
+let goalReturnFocus: HTMLElement | null = null;
 
 const errors: Record<string, string> = {
   EMPTY_TEXT: "請先輸入文字；空白不會被存成收藏。",
@@ -193,6 +217,10 @@ const errors: Record<string, string> = {
   MODEL_INPUT_INVALID: "本地模型輸入不合法，操作已停止。",
   MODEL_INVALID_OUTPUT: "模型輸出無法核對原文證據，已拒絕保存。",
   MODEL_STALE_INPUT: "你已更新原文／OCR，舊的模型建議已失效，請重新推論。",
+  GOAL_EMPTY: "請親自輸入你想找真人學伴做什麼；只有收藏字詞還不等於 Goal。",
+  GOAL_TOO_LARGE: "目標敘述太長，請縮短至最多 500 字／2048 bytes。",
+  GOAL_CONFIRMATION_REQUIRED: "未收到有效的本人明確確認操作，沒有建立草稿。",
+  GOAL_REVISION_CONFLICT: "草稿已被更新，請重新開啟收藏查看最新版本後再確認。",
 };
 
 function errorMessage(error: unknown): string {
@@ -489,6 +517,103 @@ async function renderOcrEditor(assetId: string): Promise<void> {
   });
 }
 
+/** B04：不從 OCR 或模型自動填入或確認 Goal；本人明確輸入且二次確認後才寫 Rust。 */
+async function renderGoalPanel(assetId: string): Promise<void> {
+  if (selectedAssetId !== assetId) return;
+  const panel = document.createElement("section");
+  panel.className = "goal-panel";
+  panel.setAttribute("aria-label", "S02 私人內容與本人 Goal 分離");
+  const heading = document.createElement("h3");
+  heading.textContent = "你想找真人學伴嗎？";
+  const explanation = document.createElement("p");
+  explanation.className = "fineprint";
+  explanation.textContent = "收藏「パクる」或餐廳廣告，不代表你要找人。可以只收藏，或自己寫下真正的學習目標。";
+  const state = document.createElement("p");
+  state.className = "status";
+  state.setAttribute("role", "status");
+  state.setAttribute("aria-live", "polite");
+  const field = document.createElement("label");
+  field.className = "field-label";
+  field.textContent = "只有你自己能確認的 Goal（不會自動填入）";
+  const input = document.createElement("textarea");
+  input.rows = 3;
+  input.maxLength = 500;
+  input.placeholder = "例如：我想找真人學伴，每週一起練習 JLPT N2 聽力。";
+  field.append(input);
+  const choices = document.createElement("div");
+  choices.className = "goal-actions";
+  const keep = document.createElement("button");
+  keep.type = "button";
+  keep.className = "secondary";
+  keep.textContent = "只收藏內容";
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.className = "primary";
+  confirm.textContent = "確認 Goal，建立私人草稿";
+  choices.append(keep, confirm);
+  const disclaimer = document.createElement("p");
+  disclaimer.className = "fineprint";
+  disclaimer.textContent = "確認只產生本機的私人草稿與事件；正式分享授權、配對條件及找學伴留給 B05–B08，現在不能發布。";
+  panel.append(heading, explanation, state, field, choices, disclaimer);
+  preview.append(panel);
+
+  let current: PrivateGoalDraft | null = null;
+
+  function showGoal(saved: PrivateGoalDraft): void {
+    current = saved;
+    input.value = saved.goalText;
+    state.textContent = "Goal 已由本人確認 · 私人草稿 v" + saved.revision +
+      " · 沒有分享授權，也沒有建立可公開的 Intent。";
+    confirm.textContent = "再次確認修改後的私人 Goal";
+  }
+
+  try {
+    const existing = await loadPrivateGoalDraft(rust, assetId);
+    if (selectedAssetId !== assetId) return;
+    if (existing) {
+      showGoal(existing);
+    } else {
+      state.textContent = "尚未確認任何找學伴 Goal；目前只有私人內容。";
+    }
+  } catch (error) {
+    if (selectedAssetId === assetId) state.textContent = errorMessage(error);
+  }
+  if (selectedAssetId !== assetId) return;
+
+  // 成功路徑 A：只收藏內容，絕不調用 confirm_private_goal。
+  keep.addEventListener("click", () => {
+    if (selectedAssetId !== assetId || goalDialog.open) return;
+    state.textContent = current
+      ? "繼續只收藏。既有私人 Goal 草稿沒有改動，也不會公開。"
+      : "已選擇只收藏內容。沒有建立 Goal、配對 Intent，也不會搜尋真人。";
+  });
+
+  // 成功路徑 B：只有本人的明確確認，Rust 才能產生事件與私人草稿。
+  confirm.addEventListener("click", () => {
+    if (selectedAssetId !== assetId || goalDialog.open || goalConfirmBusy) return;
+    const goalText = input.value.trim();
+    if (!goalText) {
+      state.textContent = errorMessage("GOAL_EMPTY");
+      input.focus();
+      return;
+    }
+    if (new TextEncoder().encode(goalText).byteLength > 2048) {
+      state.textContent = errorMessage("GOAL_TOO_LARGE");
+      input.focus();
+      return;
+    }
+    const expectedRevision = current?.revision ?? 0;
+    goalConfirmSummary.textContent = goalText;
+    goalConfirmStatus.textContent = "尚未確認；你可以返回修改或只收藏。";
+    goalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    goalConfirmAction = async () => {
+      const saved = await confirmPrivateGoal(rust, assetId, goalText, expectedRevision);
+      if (selectedAssetId === assetId) showGoal(saved);
+    };
+    goalDialog.showModal();
+  });
+}
+
 async function openAsset(id: string): Promise<void> {
   selectedAssetId = id;
   preview.hidden = false;
@@ -516,9 +641,10 @@ async function openAsset(id: string): Promise<void> {
       preview.append(content);
     }
     if (selectedAssetId === id) await renderModelPanel(id);
+    if (selectedAssetId === id) await renderGoalPanel(id);
     const note = document.createElement("p");
     note.className = "fineprint";
-    note.textContent = "這是你自己保存的內容，尚未產生找學伴 Goal，也沒有分享。";
+    note.textContent = "私人內容與本人 Goal 分開保存；即使確認 Goal，也只有本機私人草稿，不會自動公開或找學伴。";
     preview.append(note);
   } catch (error) {
     if (selectedAssetId === id) waiting.textContent = errorMessage(error);
@@ -641,6 +767,36 @@ importModelButton.addEventListener("click", () => {
       importModelButton.disabled = false;
     }
   })();
+});
+goalCancel.addEventListener("click", () => goalDialog.close());
+goalCommit.addEventListener("click", () => {
+  if (!goalConfirmAction || goalConfirmBusy) return;
+  const operation = goalConfirmAction;
+  goalConfirmBusy = true;
+  goalCommit.disabled = true;
+  goalCancel.disabled = true;
+  goalConfirmStatus.textContent = "正在由 Rust 建立本人確認事件與私人 Goal 草稿…";
+  void (async () => {
+    try {
+      assertNative();
+      await operation();
+      goalDialog.close();
+    } catch (error) {
+      goalConfirmStatus.textContent = errorMessage(error);
+    } finally {
+      goalConfirmBusy = false;
+      goalCommit.disabled = false;
+      goalCancel.disabled = false;
+    }
+  })();
+});
+goalDialog.addEventListener("cancel", (event) => {
+  if (goalConfirmBusy) event.preventDefault();
+});
+goalDialog.addEventListener("close", () => {
+  goalConfirmAction = null;
+  goalReturnFocus?.focus();
+  goalReturnFocus = null;
 });
 cancelDelete.addEventListener("click", () => deleteDialog.close());
 confirmDelete.addEventListener("click", () => { void deleteSelected(); });
