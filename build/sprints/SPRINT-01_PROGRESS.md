@@ -6,7 +6,7 @@
 |---|---|---|---|
 | **B01** | IN_PROGRESS | Android 啟動＋Bridge：使用者回報成功；飛航模式 NOT_RUN | PR #6：TS／Rust Unit Tests PASS，Android APK 成功打包。使用者回報 Android 0.1.0 上可顯示 `Rust Bridge 已回應`、`平台：android`。未有飛航模式／adb 日誌；S1-AC01 尚未全部 PASS。 |
 | **B02** | IN_PROGRESS（刪除功能已 Coding，待 Android 真機回歸） | **最終 CI：TS 16/16、Rust 21/21、Harness、Android APK PASS**；舊版使用者真機：選圖／顯示／關閉重啟／飛航模式讀回 PASS；**新版刪除真機 NOT_RUN**；拍照／損毀檔／權限拒絕 NOT_RUN | PR #7 同分支：刪除確認、Rust SQLite／圖片檔清理／中斷恢復均已提交，最終可安裝 APK Artifact 見下。F-01 OPEN；B02 尚未完成。 |
-| **B03** | IN_PROGRESS（ML Kit OCR／人工修正＋Gemma 4 E2B LiteRT-LM 端到端 Coding；Native 尚待驗證） | **最新 TS 30/30、Rust 31/31、Harness PASS**；Android Kotlin CI 另跑（待核對）；手機 OCR／Gemma：NOT_RUN | PR #8 疊於 PR #7；Gemma 插件採 Android SAF 匯入 `.litertlm`（SHA-256 校驗），Rust 審核原文證據／僅私有候選，SQLite 保存、來源更正後失效；不含 Cloud AI／自動模型下載；Gemma 真機推論尚未 PASS。 |
+| **B03** | IN_PROGRESS（ML Kit OCR／人工修正＋Gemma 4 E2B LiteRT-LM 端到端 Coding；Native 尚待驗證） | **最新 TS 30/30、Rust 31/31、Harness PASS**；Android OCR／Gemma Kotlin **compile-only PASS**（未打包 APK）；手機 OCR／Gemma：NOT_RUN | PR #8 疊於 PR #7；Gemma 插件採 Android SAF 匯入 `.litertlm`（SHA-256 校驗），Rust 審核原文證據／僅私有候選，SQLite 保存、來源更正後失效；不含 Cloud AI／自動模型下載；Gemma 真機推論尚未 PASS。 |
 | B04 | NOT_STARTED | NOT_RUN | 內容 ≠ Goal |
 | B05 | NOT_STARTED | NOT_RUN | Parameter Registry |
 | B06 | NOT_STARTED | NOT_RUN | SQLite 原子交易＋8-slot |
@@ -38,7 +38,7 @@
 | B02－私人收藏刪除 | 已 Coding；TS／Rust CI PASS | NOT_RUN | 刪除前確認；取消保留；刪文字與圖片；刪重複圖其中一筆不影響另一筆；清單／預覽消失；強制關閉重開仍已刪除；離線刪除；原相簿照片不受影響 |
 | B02－拍照與異常輸入回歸 | 功能入口已 Coding；既有部分單元測試 PASS | NOT_RUN | 拍照完成／取消、相機與相簿權限拒絕、損毀圖片、8MB 上限、空白文字、儲存錯誤、不自動外傳 |
 | B03－日文 OCR 與人工修正 | Kotlin／Rust／TS Coding 已提交 PR #8；TS 22/22、Rust 27/27、Harness PASS（不等於原生真機 PASS） | NOT_RUN | 斷網 OCR「パクる」與多行日文、UNKNOWN、人工修正、重開保留、更正後刪圖級聯、無原圖外傳；Android 原生 Gradle 編譯待批次驗證 |
-| B03－Gemma 4 E2B 本地模型 | Kotlin LiteRT-LM CPU + SAF 匯入／SHA-256 驗證 + Rust 受控 JSON/Evidence + SQLite/GUI Coding；TypeScript/Rust CI PASS；**Gradle 原生編譯待核對** | NOT_RUN | 匯入 2.59GB 正式模型、Hash 不匹配拒絕、RAM/載入/回應時間、飛航模式、真實文字推論、拒絕偽造 Goal/Consent、重啟保存、修改 OCR 後舊建議失效，證明絕無 Cloud fallback |
+| B03－Gemma 4 E2B 本地模型 | Kotlin LiteRT-LM CPU + SAF 匯入／SHA-256 驗證 + Rust 受控 JSON/Evidence + SQLite/GUI Coding；TypeScript/Rust CI PASS；**Android Kotlin Gradle compile-only PASS** | NOT_RUN | 匯入 2.59GB 正式模型、Hash 不匹配拒絕、RAM/載入/回應時間、飛航模式、真實文字推論、拒絕偽造 Goal/Consent、重啟保存、修改 OCR 後舊建議失效，證明絕無 Cloud fallback |
 
 **當前狀態**：待測佇列已記錄；**不得僅因 B02 刪除一項功能修改就再要求單獨安裝新版 APK**。待至少兩項功能在同一新批次達到可驗收狀態，再統一提供一份 APK 與整批驗收清單。先前 B02 的真機成功回報仍保留原始 Evidence。
 
@@ -88,3 +88,11 @@
 - **自動化 Evidence**：[TS 30/30 + Rust 31/31](https://github.com/NFF98/CKM/actions/runs/44253299393) PASS；Harness 在同系列 Run PASS。Android Kotlin/Gradle 專用 **compile-only** Workflow `.github/workflows/b03-native-compile.yml` 不產 APK；第一次執行因 `tauri android init` 不生成 `tauri.settings.gradle` 而在設定階段失敗，並非 Kotlin 程式錯誤；改成獨立 Library Gradle 驗證：[Run #44253782242](https://github.com/NFF98/CKM/actions/runs/44253782242)，結果以最新實際 CI 為準。
 - **仍未驗證**：LiteRT-LM 0.16.1 Android 原生編譯及模型實際載入、2.59GB 匯入和 SHA 校驗、真機 OCR／Gemma 日語品質、120s 超時、低記憶體／效能／電池、飛航模式／無雲端呼叫。B03 **IN_PROGRESS / Android NOT_RUN**。
 - **開發節奏**：只記錄待測與 CI，暫無新版 APK，不要求使用者現在測試；至少兩項已完成功能一次合併真機驗收。
+
+### B03 原生 Android Kotlin CI Evidence（2026-11-18）
+
+- **Android 原生 compile-only PASS**：[GitHub Actions Run #44254131510](https://github.com/NFF98/CKM/actions/runs/44254131510)，受測 Source SHA `9acdc8bea0e1f74a651a133b3f28f5df99785815`。Log 同時包含 `:tauri-plugin-cakami-ocr:compileDebugKotlin` 與 `:tauri-plugin-cakami-model:compileDebugKotlin`，`BUILD SUCCESSFUL`。
+- 最初 Android Gradle job 因 `tauri.settings.gradle` 在 init 階段不存在而失敗；修改 CI 為臨時三個 Library 的 Gradle 設定，後續發現缺少 AndroidX ActivityResult import 依賴並已修正，**最終在不打包 APK 的前提下通過編譯**。
+- **此 PASS 僅證明 Gradle Kotlin 編譯，不代表**：安裝後能開啟原生 Plugin、2.59GB 模型可成功匯入、模型可在目標手機推論、耗時／RAM／電池符合要求或 OCR 辨識正確。以上皆 `NOT_RUN`。
+- TypeScript 30/30、Rust 31/31、Harness PASS 的最早完整 [Run #44253299393](https://github.com/NFF98/CKM/actions/runs/44253299393)；最新 Rust／TS 改動若有，須看相應 PR CI。B03 維持 `IN_PROGRESS`，B04 仍 `NOT_STARTED`。
+- **APK**：沒有產出新 Artifact，等後續批次真機驗收才安排。
