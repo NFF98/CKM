@@ -12,7 +12,10 @@ export interface BridgeHealth {
   nativeAi: "not_installed";
 }
 
-export type InvokeAdapter = (command: string) => Promise<unknown>;
+export type InvokeAdapter = (
+  command: string,
+  args?: Record<string, unknown>
+) => Promise<unknown>;
 
 export function parseBridgeHealth(value: unknown): BridgeHealth {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {

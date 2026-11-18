@@ -1,6 +1,8 @@
+mod local_store;
 mod platform;
 use platform::NativeAdapter;
 use serde::Serialize;
+use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,10 +32,46 @@ fn bridge_health() -> BridgeHealth {
     }
 }
 
+fn private_store(app: &tauri::AppHandle) -> Result<local_store::LocalStore, String> {
+    let root = app.path().app_data_dir().map_err(|_| "STORAGE_UNAVAILABLE".to_string())?;
+    local_store::LocalStore::open(&root)
+}
+
+/// B02：由 Rust 控制的 App-private 儲存，前端不能指定儲存路徑。
+#[tauri::command]
+fn save_drop(
+    app: tauri::AppHandle,
+    input: local_store::IncomingDrop,
+) -> Result<local_store::DropSummary, String> {
+    private_store(&app)?.save(input)
+}
+
+#[tauri::command]
+fn list_drops(app: tauri::AppHandle) -> Result<Vec<local_store::DropSummary>, String> {
+    private_store(&app)?.list()
+}
+
+#[tauri::command]
+fn load_drop(app: tauri::AppHandle, id: String) -> Result<local_store::DropDetail, String> {
+    private_store(&app)?.load(&id)
+}
+
+/// 刪除操作只能使用既有 UUID，檔案和 SQLite 由 Rust 共同維護。
+#[tauri::command]
+fn delete_drop(app: tauri::AppHandle, id: String) -> Result<bool, String> {
+    private_store(&app)?.delete(&id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![bridge_health])
+        .invoke_handler(tauri::generate_handler![
+            bridge_health,
+            save_drop,
+            list_drops,
+            load_drop,
+            delete_drop
+        ])
         .run(tauri::generate_context!())
         .expect("無法啟動 CAKAMI Tauri App");
 }

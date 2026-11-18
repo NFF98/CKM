@@ -1,0 +1,30 @@
+{
+  "task_id": "B02",
+  "status": "IN_PROGRESS",
+  "sprint": "S1",
+  "base_task": "B01",
+  "implementation_branch": "feat/s1-b02-local-drop-storage",
+  "pull_request": 7,
+  "backlog_ref": "build/BACKLOG.md#b02",
+  "spec_refs": [
+    "design/FUNCTIONAL_SPEC.md#s01--dropb01b02",
+    "design/TECHNICAL_SPEC.md",
+    "design/GUI_UX_SPEC.md",
+    "test/ACCEPTANCE_SPEC.md",
+    "build/sprints/SPRINT-01_LOCAL_AI.md"
+  ],
+  "acceptance": [
+    "Android 可選圖、拍照、貼文字",
+    "重啟 App 仍可讀原文及圖片",
+    "私人檔案／SQLite 不自動上傳",
+    "權限拒絕／檔案損毀／空白／過大／重複有明確處理",
+    "Android 飛航模式可離線讀回"
+  ],
+  "current_evidence": [
+    "TypeScript 13/13 PASS：https://github.com/NFF98/CKM/actions/runs/44048635199",
+    "Rust 13/13 PASS：https://github.com/NFF98/CKM/actions/runs/44048635199",
+    "Android ARM64 APK Build PASS：https://github.com/NFF98/CKM/actions/runs/44048635171"
+  ],
+  "hardware_acceptance": "NOT_RUN",
+  "notes": "本 JSON 為進度參考，不是開工批准或 CI Governance Gate；F-01 的最大檔案、格式、批次與重複策略仍待產品決策。"
+}

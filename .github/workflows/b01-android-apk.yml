@@ -1,9 +1,11 @@
 name: B01 Android APK Smoke
+# APK 採批次真機驗收：平時 PR 提交只執行 TypeScript／Rust／Harness CI。
+# 至少兩個可供真機驗收的功能已完成且登記待測時，
+# Coding Agent 才為對應 PR 加上 apk-batch-ready label 啟動一次打包。
+# 不會因每個 commit／同步 PR 自動打包。
 on:
   pull_request:
-    paths:
-      - 'build/app/**'
-      - '.github/workflows/b01-android-apk.yml'
+    types: [labeled]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,6 +13,7 @@ permissions:
 jobs:
   apk:
     name: Android ARM64 debug APK (not a real-device test)
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'apk-batch-ready'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
