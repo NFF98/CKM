@@ -35,6 +35,20 @@ describe("S1-AC01：TS↔Rust Bridge 契約", () => {
     await expect(checkBridge(invoke)).rejects.toThrow("bridge unavailable");
   });
 
+  it("已下載且已驗證的 Gemma 必須顯示真實模型狀態", () => {
+    const result = parseBridgeHealth({ ...androidHealth, nativeAi: "model_verified" });
+    expect(result.nativeAi).toBe("model_verified");
+  });
+
+  it("尚未下載、等待 Wi-Fi、下載中或暫停都不能假裝已安裝", () => {
+    for (const nativeAi of ["not_installed", "waiting_wifi", "downloading", "paused",
+      "download_error", "unavailable", "status_error"]) {
+      expect(parseBridgeHealth({ ...androidHealth, nativeAi }).nativeAi).toBe(nativeAi);
+    }
+    expect(() => parseBridgeHealth({ ...androidHealth, nativeAi: "cloud_ready" }))
+      .toThrow("Contract");
+  });
+
   it("共用 contract 接受 iOS 平台，但不宣稱 iOS 已測試", () => {
     expect(parseBridgeHealth({ ...androidHealth, platform: "ios" }).platform)
       .toBe("ios");
