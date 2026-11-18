@@ -56,6 +56,12 @@ fn load_drop(app: tauri::AppHandle, id: String) -> Result<local_store::DropDetai
     private_store(&app)?.load(&id)
 }
 
+/// 刪除操作只能使用既有 UUID，檔案和 SQLite 由 Rust 共同維護。
+#[tauri::command]
+fn delete_drop(app: tauri::AppHandle, id: String) -> Result<bool, String> {
+    private_store(&app)?.delete(&id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -63,7 +69,8 @@ pub fn run() {
             bridge_health,
             save_drop,
             list_drops,
-            load_drop
+            load_drop,
+            delete_drop
         ])
         .run(tauri::generate_context!())
         .expect("無法啟動 CAKAMI Tauri App");
