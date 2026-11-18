@@ -11,6 +11,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use uuid::Uuid;
+use tauri_plugin_cakami_ocr::{NativeOcrResult, OcrSegment};
+use tauri_plugin_cakami_model::NativeReply;
 
 // 暫時的工程安全上限；正式批次、格式和容量策略屬 F-01 待決，不是已核准產品規則。
 pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
@@ -52,6 +54,44 @@ pub struct DropDetail {
     pub summary: DropSummary,
     pub text: Option<String>,
     pub data_base64: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrRecord {
+    pub asset_id: String,
+    /// "not_run"／"recognized"／"unknown"；沒有任何假 OCR 文本。
+    pub status: String,
+    pub raw_text: Option<String>,
+    pub corrected_text: Option<String>,
+    pub engine: Option<String>,
+    pub engine_version: Option<String>,
+    pub segments: Vec<OcrSegment>,
+    pub elapsed_ms: Option<u64>,
+    pub updated_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelSuggestion {
+    pub asset_id: String,
+    pub status: String,
+    pub evidence_quote: String,
+    pub content_hint: Option<String>,
+    pub uncertainty: Option<String>,
+    pub model_id: String,
+    pub runtime: String,
+    pub backend: String,
+    pub elapsed_ms: u64,
+    pub updated_at_ms: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct RawSuggestion {
+    evidence_quote: String,
+    content_hint: Option<String>,
+    uncertainty: Option<String>,
 }
 
 pub struct LocalStore {
@@ -134,7 +174,33 @@ impl LocalStore {
                   OR (kind='image' AND text_content IS NULL))
              );
              CREATE INDEX IF NOT EXISTS idx_assets_recent ON local_assets(created_at_ms DESC);
-             CREATE INDEX IF NOT EXISTS idx_assets_fingerprint ON local_assets(sha256);",
+             CREATE INDEX IF NOT EXISTS idx_assets_fingerprint ON local_assets(sha256);
+             CREATE TABLE IF NOT EXISTS local_ocr (
+               asset_id TEXT PRIMARY KEY NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
+               status TEXT NOT NULL CHECK(status IN ('not_run','recognized','unknown')),
+               raw_text TEXT,
+               corrected_text TEXT,
+               engine TEXT,
+               engine_version TEXT,
+               segments_json TEXT NOT NULL DEFAULT '[]',
+               elapsed_ms INTEGER,
+               updated_at_ms INTEGER NOT NULL,
+               CHECK(raw_text IS NULL OR length(raw_text) <= 65536),
+               CHECK(corrected_text IS NULL OR length(corrected_text) <= 65536)
+             );
+             CREATE TABLE IF NOT EXISTS local_model_suggestions (
+               asset_id TEXT PRIMARY KEY NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
+               status TEXT NOT NULL CHECK(status='suggested_private'),
+               source_sha256 TEXT NOT NULL CHECK(length(source_sha256)=64),
+               evidence_quote TEXT NOT NULL CHECK(length(evidence_quote)>0),
+               content_hint TEXT,
+               uncertainty TEXT,
+               model_id TEXT NOT NULL,
+               runtime TEXT NOT NULL,
+               backend TEXT NOT NULL,
+               elapsed_ms INTEGER NOT NULL,
+               updated_at_ms INTEGER NOT NULL
+             );",
         )
         .map_err(|_| store_error("DATABASE_MIGRATION_FAILED"))?;
         let store = Self { root: root.to_path_buf() };
@@ -144,8 +210,13 @@ impl LocalStore {
     }
 
     fn connect(&self) -> Result<Connection, String> {
-        Connection::open(self.root.join("cakami_private.sqlite"))
-            .map_err(|_| store_error("DATABASE_UNAVAILABLE"))
+        let conn = Connection::open(self.root.join("cakami_private.sqlite"))
+            .map_err(|_| store_error("DATABASE_UNAVAILABLE"))?;
+        // SQLite FK 設定是逐 Connection 生效，必須在每次開啟時啟用。
+        // 刪除 Asset 時才能一起刪掉只留在手機的 OCR 與人工修正。
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .map_err(|_| store_error("DATABASE_UNAVAILABLE"))?;
+        Ok(conn)
     }
 
     pub fn save(&self, input: IncomingDrop) -> Result<DropSummary, String> {
@@ -366,6 +437,233 @@ impl LocalStore {
                 .map_err(|_| store_error("STORAGE_CLEANUP_PENDING"))?;
         }
         Ok(true)
+    }
+
+
+    fn ensure_image(&self, conn: &Connection, id: &str) -> Result<(), String> {
+        let kind: Option<String> = conn.query_row(
+            "SELECT kind FROM local_assets WHERE id=?1",
+            params![id], |row| row.get(0),
+        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        match kind.as_deref() {
+            Some("image") => Ok(()),
+            Some("text") => Err(store_error("OCR_IMAGE_REQUIRED")),
+            _ => Err(store_error("ASSET_NOT_FOUND")),
+        }
+    }
+
+    /// 只接受 Rust 從 native plugin 收到的辨識結果，不暴露任意「偽 OCR」寫入 Command。
+    pub fn save_recognition(&self, id: &str, native: NativeOcrResult) -> Result<OcrRecord, String> {
+        let id = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        if native.engine != "mlkit_japanese_bundled" || native.engine_version != "16.0.1" {
+            return Err(store_error("OCR_INVALID_RESULT"));
+        }
+        if native.text.len() > MAX_TEXT_BYTES || native.segments.len() > 500 ||
+            native.segments.iter().any(|segment| segment.text.len() > MAX_TEXT_BYTES)
+        {
+            return Err(store_error("OCR_INVALID_RESULT"));
+        }
+        let segments_json = serde_json::to_string(&native.segments)
+            .map_err(|_| store_error("OCR_INVALID_RESULT"))?;
+        if segments_json.len() > 256 * 1024 {
+            return Err(store_error("OCR_INVALID_RESULT"));
+        }
+        let conn = self.connect()?;
+        self.ensure_image(&conn, &id)?;
+        let now = clock_ms()?;
+        let status = if native.text.trim().is_empty() { "unknown" } else { "recognized" };
+        conn.execute(
+            "INSERT INTO local_ocr (asset_id, status, raw_text, engine, engine_version,
+                segments_json, elapsed_ms, updated_at_ms)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
+             ON CONFLICT(asset_id) DO UPDATE SET
+                 status=excluded.status,
+                 raw_text=excluded.raw_text,
+                 engine=excluded.engine,
+                 engine_version=excluded.engine_version,
+                 segments_json=excluded.segments_json,
+                 elapsed_ms=excluded.elapsed_ms,
+                 updated_at_ms=excluded.updated_at_ms",
+            params![id, status, native.text, native.engine, native.engine_version,
+                segments_json, native.elapsed_ms as i64, now],
+        ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        self.load_ocr(&id)
+    }
+
+    /// 本人人工更正：與原始辨識分欄保存，並保留引擎與來源；不等於 Goal 確認。
+    pub fn correct_ocr(&self, id: &str, corrected: &str) -> Result<OcrRecord, String> {
+        let id = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        if corrected.trim().is_empty() {
+            return Err(store_error("EMPTY_TEXT"));
+        }
+        if corrected.len() > MAX_TEXT_BYTES {
+            return Err(store_error("TEXT_TOO_LARGE"));
+        }
+        let conn = self.connect()?;
+        self.ensure_image(&conn, &id)?;
+        conn.execute(
+            "INSERT INTO local_ocr (asset_id, status, corrected_text, updated_at_ms)
+             VALUES (?1,'not_run',?2,?3)
+             ON CONFLICT(asset_id) DO UPDATE SET
+               corrected_text=excluded.corrected_text,
+               updated_at_ms=excluded.updated_at_ms",
+            params![id, corrected, clock_ms()?],
+        ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        self.load_ocr(&id)
+    }
+
+    pub fn load_ocr(&self, id: &str) -> Result<OcrRecord, String> {
+        let id = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        let conn = self.connect()?;
+        self.ensure_image(&conn, &id)?;
+        let found: Option<(String, Option<String>, Option<String>, Option<String>,
+            Option<String>, String, Option<i64>, i64)> = conn.query_row(
+            "SELECT status, raw_text, corrected_text, engine, engine_version,
+                segments_json, elapsed_ms, updated_at_ms
+             FROM local_ocr WHERE asset_id=?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?,
+                row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?)),
+        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        if let Some((status, raw_text, corrected_text, engine, engine_version,
+            segments_json, elapsed_ms, updated_at_ms)) = found {
+            let segments = serde_json::from_str(&segments_json)
+                .map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+            Ok(OcrRecord {
+                asset_id: id, status, raw_text, corrected_text, engine, engine_version,
+                segments, elapsed_ms: elapsed_ms.map(|v| v.max(0) as u64),
+                updated_at_ms: Some(updated_at_ms),
+            })
+        } else {
+            Ok(OcrRecord {
+                asset_id: id, status: "not_run".to_string(),
+                raw_text: None, corrected_text: None, engine: None,
+                engine_version: None, segments: Vec::new(),
+                elapsed_ms: None, updated_at_ms: None,
+            })
+        }
+    }
+
+
+    /// Rust-only: load trusted app-private text (or local OCR / user correction).
+    pub fn model_input_for_asset(&self, id: &str) -> Result<String, String> {
+        let uuid = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        let conn = self.connect()?;
+        let row: Option<(String, Option<String>)> = conn.query_row(
+            "SELECT kind,text_content FROM local_assets WHERE id=?1",
+            params![uuid], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        let (kind, text) = row.ok_or_else(|| store_error("ASSET_NOT_FOUND"))?;
+        let raw = match kind.as_str() {
+            "text" => text.unwrap_or_default(),
+            "image" => {
+                let ocr = self.load_ocr(&uuid)?;
+                ocr.corrected_text.filter(|v| !v.trim().is_empty())
+                    .or_else(|| ocr.raw_text.filter(|v| !v.trim().is_empty()))
+                    .ok_or_else(|| store_error("MODEL_INPUT_UNKNOWN"))?
+            }
+            _ => return Err(store_error("MODEL_INPUT_UNKNOWN")),
+        };
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(store_error("MODEL_INPUT_UNKNOWN"));
+        }
+        if trimmed.len() > 8192 {
+            return Err(store_error("MODEL_INPUT_TOO_LARGE"));
+        }
+        Ok(trimmed.to_owned())
+    }
+
+    /// Model output never confirms a Goal/Need/Offer. Reject unknown JSON keys and
+    /// any quote that is not a literal substring of the private source.
+    pub fn save_model_suggestion(
+        &self, id: &str, original_input: &str, native: NativeReply,
+    ) -> Result<ModelSuggestion, String> {
+        let uuid = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?
+            .to_string();
+        if native.model_id != "gemma-4-E2B-it"
+            || native.runtime != "litert-lm-android-0.16.1"
+            || native.backend != "cpu"
+            || native.raw_text.len() > 8192
+        {
+            return Err(store_error("MODEL_INVALID_OUTPUT"));
+        }
+        let raw: RawSuggestion = serde_json::from_str(native.raw_text.trim())
+            .map_err(|_| store_error("MODEL_INVALID_OUTPUT"))?;
+        let quote = raw.evidence_quote.trim();
+        if quote.is_empty() || quote.chars().count() > 80
+            || !original_input.contains(quote)
+            || raw.content_hint.as_ref().is_some_and(|v| v.chars().count() > 200)
+            || raw.uncertainty.as_ref().is_some_and(|v| v.chars().count() > 160)
+        {
+            return Err(store_error("MODEL_INVALID_OUTPUT"));
+        }
+        let sha = format!("{:x}", Sha256::digest(original_input.as_bytes()));
+        let now = clock_ms()?;
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| store_error("DATABASE_BUSY"))?;
+        // Check latest source under the SQLite write lock to reject stale model replies.
+        let row: Option<(String, Option<String>)> = tx.query_row(
+            "SELECT kind, text_content FROM local_assets WHERE id=?1",
+            params![uuid], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        let current = match row {
+            Some((kind, text)) if kind == "text" => text.unwrap_or_default().trim().to_owned(),
+            Some((kind, _)) if kind == "image" => tx.query_row(
+                "SELECT coalesce(nullif(trim(corrected_text),''),nullif(trim(raw_text),''),'')
+                 FROM local_ocr WHERE asset_id=?1",
+                params![uuid], |row| row.get::<_, String>(0),
+            ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?
+                .unwrap_or_default(),
+            _ => return Err(store_error("ASSET_NOT_FOUND")),
+        };
+        if current != original_input {
+            return Err(store_error("MODEL_STALE_INPUT"));
+        }
+        tx.execute(
+            "INSERT INTO local_model_suggestions
+             (asset_id,status,source_sha256,evidence_quote,content_hint,uncertainty,
+              model_id,runtime,backend,elapsed_ms,updated_at_ms)
+             VALUES (?1,'suggested_private',?2,?3,?4,?5,?6,?7,?8,?9,?10)
+             ON CONFLICT(asset_id) DO UPDATE SET
+               source_sha256=excluded.source_sha256,
+               evidence_quote=excluded.evidence_quote,
+               content_hint=excluded.content_hint,
+               uncertainty=excluded.uncertainty,
+               model_id=excluded.model_id,
+               runtime=excluded.runtime,
+               backend=excluded.backend,
+               elapsed_ms=excluded.elapsed_ms,
+               updated_at_ms=excluded.updated_at_ms",
+            params![uuid, sha, quote, raw.content_hint, raw.uncertainty, native.model_id,
+                    native.runtime, native.backend, native.elapsed_ms as i64, now],
+        ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        tx.commit().map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        self.load_model_suggestion(&uuid)?
+            .ok_or_else(|| store_error("DATABASE_READ_FAILED"))
+    }
+
+    /// Old AI guesses become invisible once the user corrects OCR text.
+    pub fn load_model_suggestion(&self, id: &str) -> Result<Option<ModelSuggestion>, String> {
+        let uuid = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        let input = self.model_input_for_asset(&uuid)?;
+        let sha = format!("{:x}", Sha256::digest(input.as_bytes()));
+        let conn = self.connect()?;
+        conn.query_row(
+            "SELECT asset_id,status,evidence_quote,content_hint,uncertainty,
+                    model_id,runtime,backend,elapsed_ms,updated_at_ms
+             FROM local_model_suggestions WHERE asset_id=?1 AND source_sha256=?2",
+            params![uuid, sha],
+            |row| Ok(ModelSuggestion {
+                asset_id: row.get(0)?, status: row.get(1)?,
+                evidence_quote: row.get(2)?, content_hint: row.get(3)?,
+                uncertainty: row.get(4)?, model_id: row.get(5)?,
+                runtime: row.get(6)?, backend: row.get(7)?,
+                elapsed_ms: row.get::<_, i64>(8)?.max(0) as u64,
+                updated_at_ms: row.get(9)?,
+            }),
+        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))
     }
 
     pub fn list(&self) -> Result<Vec<DropSummary>, String> {
@@ -653,6 +951,178 @@ mod tests {
         let reopened = LocalStore::open(dir.path()).unwrap();
         assert!(reopened.list().unwrap().is_empty());
         assert!(!pending_dir.join(&name).exists());
+    }
+
+
+    fn recognized_ocr(text: &str) -> NativeOcrResult {
+        NativeOcrResult {
+            text: text.into(), segments: vec![OcrSegment {
+                text: text.into(), bounds: [0, 0, 100, 50],
+            }],
+            engine: "mlkit_japanese_bundled".into(), engine_version: "16.0.1".into(),
+            elapsed_ms: 42,
+        }
+    }
+
+    #[test]
+    fn b03_ocr_persists_raw_text_and_manual_correction_across_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let asset = store.save(png_drop(&tiny_png())).unwrap();
+        let initial = store.load_ocr(&asset.id).unwrap();
+        assert_eq!(initial.status, "not_run");
+        let result = store.save_recognition(&asset.id, recognized_ocr("パクる")).unwrap();
+        assert_eq!(result.status, "recognized");
+        assert_eq!(result.raw_text.as_deref(), Some("パクる"));
+        assert!(result.corrected_text.is_none());
+        store.correct_ocr(&asset.id, "パクる（模仿）").unwrap();
+        drop(store);
+        let reopened = LocalStore::open(dir.path()).unwrap();
+        let saved = reopened.load_ocr(&asset.id).unwrap();
+        assert_eq!(saved.raw_text.as_deref(), Some("パクる"));
+        assert_eq!(saved.corrected_text.as_deref(), Some("パクる（模仿）"));
+        assert_eq!(saved.engine.as_deref(), Some("mlkit_japanese_bundled"));
+        assert_eq!(saved.segments[0].bounds, [0, 0, 100, 50]);
+    }
+
+    #[test]
+    fn b03_unknown_is_not_faked_and_manual_correction_stays_independent() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let asset = store.save(png_drop(&tiny_png())).unwrap();
+        let result = store.save_recognition(&asset.id, recognized_ocr("")).unwrap();
+        assert_eq!(result.status, "unknown");
+        assert_eq!(result.raw_text.as_deref(), Some(""));
+        let edited = store.correct_ocr(&asset.id, "本人手動輸入").unwrap();
+        assert_eq!(edited.corrected_text.as_deref(), Some("本人手動輸入"));
+        let later = store.save_recognition(&asset.id, recognized_ocr("自動更新")).unwrap();
+        assert_eq!(later.corrected_text.as_deref(), Some("本人手動輸入"));
+        assert_eq!(later.raw_text.as_deref(), Some("自動更新"));
+    }
+
+    #[test]
+    fn b03_correction_on_text_or_missing_id_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let text = store.save(text_drop("JLPT N2")).unwrap();
+        assert_eq!(store.correct_ocr(&text.id, "other").unwrap_err(), "OCR_IMAGE_REQUIRED");
+        assert_eq!(store.load_ocr(&text.id).unwrap_err(), "OCR_IMAGE_REQUIRED");
+        assert_eq!(store.load_ocr("../../secret").unwrap_err(), "INVALID_ASSET_ID");
+    }
+
+    #[test]
+    fn b03_empty_and_oversized_correction_does_not_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let asset = store.save(png_drop(&tiny_png())).unwrap();
+        assert_eq!(store.correct_ocr(&asset.id, "  ").unwrap_err(), "EMPTY_TEXT");
+        assert_eq!(store.correct_ocr(&asset.id, &"日".repeat(23000)).unwrap_err(),
+            "TEXT_TOO_LARGE");
+        assert_eq!(store.load_ocr(&asset.id).unwrap().status, "not_run");
+    }
+
+    #[test]
+    fn b03_delete_image_cascades_local_ocr_and_does_not_touch_other_asset() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let first = store.save(png_drop(&tiny_png())).unwrap();
+        let second = store.save(png_drop(&tiny_png())).unwrap();
+        store.correct_ocr(&first.id, "秘密文字").unwrap();
+        store.correct_ocr(&second.id, "保留文字").unwrap();
+        store.delete(&first.id).unwrap();
+        assert_eq!(store.load_ocr(&first.id).unwrap_err(), "ASSET_NOT_FOUND");
+        assert_eq!(store.load_ocr(&second.id).unwrap().corrected_text.as_deref(),
+            Some("保留文字"));
+        let conn = store.connect().unwrap();
+        let n: i64 = conn.query_row("SELECT count(*) FROM local_ocr", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn b03_untrusted_ocr_engine_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let asset = store.save(png_drop(&tiny_png())).unwrap();
+        let mut result = recognized_ocr("偽造");
+        result.engine = "cloud_ai".into();
+        assert_eq!(store.save_recognition(&asset.id, result).unwrap_err(), "OCR_INVALID_RESULT");
+        assert_eq!(store.load_ocr(&asset.id).unwrap().status, "not_run");
+    }
+
+
+    fn model_reply(json: &str) -> NativeReply {
+        NativeReply {
+            raw_text: json.into(), model_id: "gemma-4-E2B-it".into(),
+            runtime: "litert-lm-android-0.16.1".into(),
+            backend: "cpu".into(), elapsed_ms: 98,
+        }
+    }
+
+    #[test]
+    fn b03_model_saves_evidence_only_as_private_suggestion() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる JLPT N2")).unwrap();
+        let input = store.model_input_for_asset(&saved.id).unwrap();
+        let reply = model_reply(r#"{"evidenceQuote":"パクる","contentHint":"日語學習詞彙","uncertainty":null}"#);
+        let suggestion = store.save_model_suggestion(&saved.id, &input, reply).unwrap();
+        assert_eq!(suggestion.status, "suggested_private");
+        assert_eq!(suggestion.evidence_quote, "パクる");
+        drop(store);
+        let reopened = LocalStore::open(dir.path()).unwrap();
+        assert_eq!(reopened.load_model_suggestion(&saved.id).unwrap().unwrap().content_hint,
+                   Some("日語學習詞彙".into()));
+    }
+
+    #[test]
+    fn b03_model_rejects_fabricated_quote_and_consent_forgery() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        for json in [
+            r#"{"evidenceQuote":"不存在","contentHint":null,"uncertainty":null}"#,
+            r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"consent":true}"#,
+            r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"goal":"Study Match"}"#,
+            "not valid JSON",
+        ] {
+            assert_eq!(store.save_model_suggestion(&saved.id, "パクる", model_reply(json))
+                       .unwrap_err(), "MODEL_INVALID_OUTPUT");
+        }
+        assert!(store.load_model_suggestion(&saved.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn b03_model_rejects_stale_ocr_correction_and_deletion_cascades() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(png_drop(&tiny_png())).unwrap();
+        assert_eq!(store.model_input_for_asset(&saved.id).unwrap_err(), "MODEL_INPUT_UNKNOWN");
+        store.correct_ocr(&saved.id, "パクる").unwrap();
+        let before = store.model_input_for_asset(&saved.id).unwrap();
+        let reply = model_reply(r#"{"evidenceQuote":"パクる","contentHint":"學習","uncertainty":null}"#);
+        store.save_model_suggestion(&saved.id, &before, reply).unwrap();
+        store.correct_ocr(&saved.id, "あたらしい").unwrap();
+        assert!(store.load_model_suggestion(&saved.id).unwrap().is_none());
+        assert_eq!(store.save_model_suggestion(&saved.id, &before,
+            model_reply(r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null}"#))
+            .unwrap_err(), "MODEL_STALE_INPUT");
+        store.delete(&saved.id).unwrap();
+        let conn = store.connect().unwrap();
+        let n: i64 = conn.query_row("SELECT count(*) FROM local_model_suggestions", [],
+            |row| row.get(0)).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn b03_model_rejects_untrusted_runtime_and_bad_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        let mut reply = model_reply(r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null}"#);
+        reply.runtime = "cloud_ai".into();
+        assert_eq!(store.save_model_suggestion(&saved.id, "パクる", reply).unwrap_err(),
+                   "MODEL_INVALID_OUTPUT");
+        assert_eq!(store.model_input_for_asset("../../secret").unwrap_err(), "INVALID_ASSET_ID");
     }
 
 }
