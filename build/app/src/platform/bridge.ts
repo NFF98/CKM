@@ -9,7 +9,8 @@ export interface BridgeHealth {
   appVersion: string;
   networkRequired: false;
   cloudAiEnabled: false;
-  nativeAi: "not_installed";
+  nativeAi: "model_verified" | "downloading" | "waiting_wifi" | "paused" |
+    "download_error" | "unavailable" | "not_installed" | "status_error";
 }
 
 export type InvokeAdapter = (
@@ -32,7 +33,9 @@ export function parseBridgeHealth(value: unknown): BridgeHealth {
     report.appVersion.length === 0 ||
     report.networkRequired !== false ||
     report.cloudAiEnabled !== false ||
-    report.nativeAi !== "not_installed"
+    !["model_verified", "downloading", "waiting_wifi", "paused",
+      "download_error", "unavailable", "not_installed", "status_error"]
+      .includes(String(report.nativeAi))
   ) {
     throw new Error("Rust Bridge Contract 不符合 B01／No Cloud AI 要求");
   }
