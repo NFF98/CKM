@@ -150,3 +150,17 @@ textarea {
 .parameter-panel button { min-height: 48px; }
 #parameter-dialog .delete-dialog-actions { grid-template-columns: 1fr; }
 #parameter-dialog .delete-dialog-actions .primary { margin-bottom: 0; }
+
+/* Gemma one-stop onboarding: download progress / pause / Wi-Fi / opt-in mobile data. */
+#model-progress {
+  display: block;
+  width: 100%;
+  height: 16px;
+  margin: 14px 0 4px;
+  accent-color: #0f766e;
+}
+#model-progress[hidden],
+.model-download-actions button[hidden] { display: none; }
+#model-download-percent { font-variant-numeric: tabular-nums; }
+.model-download-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.model-download-actions button { flex: 1 1 170px; min-height: 48px; margin-bottom: 0; }
