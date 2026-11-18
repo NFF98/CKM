@@ -102,3 +102,16 @@ B03 目前已提交 Rust ↔ Android Kotlin LiteRT-LM ↔ SQLite 的 Coding，�
 **待手機驗收（NOT_RUN）**：新增「パクる」或餐廳優惠文字 → 只收藏 → 沒有 Goal、Intent／配對；手動確認一筆 N2 Goal → 私人草稿可查看，重啟仍在；修改 Goal 產生新版本與新確認事件；取消 dialog 不改資料；刪除來源後草稿／事件消失；飛航模式仍可執行，沒有任何外傳。所有狀態與結果保存至 `build/sprints/SPRINT-01_PROGRESS.md`，只以真實操作 Evidence 標 PASS。
 
 **APK 批次規則**：單筆 B04 Commit 不觸發 Android APK，先用 TS／Rust／Harness 自動化測試。至少兩個可驗收功能成批、且程式與相關 CI 穩定時再安排一次 APK／真機測試。
+
+## B05｜受控 Parameter Concept Registry 與真人確認（2026-11-18）
+
+B05 是 S1-AC05 / T01–T04 的「**概念與私人參數 Gate**」，**不是** B06 的 Matching 8-slot，也沒有分享或搜尋真人的功能。先開啟一筆私人收藏，手動確認 B04 的找學伴 Goal，才能在下方看到「私人條件（B05）」。
+
+- **已知概念**：Registry v1 目前只建立 SSOT 明確列出的一項 `study.jlpt_level`；`N2`／`JLPT N2`／`日語二級`（日文二級等同義別名）會變成一個 `N2` 值。同 Goal 更新同概念只增加版本，不建新的 Slot。
+- **未知概念**：T-01 完整白名單／型別／硬條件仍 OPEN，其他名稱只能記為 `UNKNOWN`／`private`，**沒有確認按鈕**，不會送進配對。當前也不把 100 張單字截圖當作 100 個參數。
+- **人工提案與確認**：輸入條件 → Rust `preview_parameter_concept` 標準化 → `save_parameter_proposal` 寫入 App-private SQLite `OBSERVED`／`UNKNOWN`；已知 `OBSERVED` 另由使用者開啟確認視窗，按下「確認此私人條件」後 `confirm_private_parameter` 才建立 Rust UUID 事件／`CONFIRMED`。**CONFIRMED 只代表本人確認這個私人值；沒有分享同意、沒有 Active Intent**。
+- **來源、權限與版本**：`source=user_explicit` 和 `evidence_ref` 由 Rust 依本人輸入控制；外部不可傳入假 `confirmed_event_id`、`source=model_inferred`、`visibility=published`、`consent=true`；每筆保存需正確 `goal revision` 和 `parameter version`，過期畫面不會覆寫新資料。SQLite `CHECK / UNIQUE / FK` 額外防繞過。
+- **Scope 與時效**：此版本只允許 `intent`、`intent_lifecycle` 或一次性 `fixed`。一次性「星期六有空」必須**親自選擇完整未來日期與時間**，絕不自動推成每週重複；`profile`、`pair`、`persistent_review` 尚未提供合法生命週期／持有者資訊，會直接拒絕。
+- **Model Boundary**：OCR／Gemma 仍只有私有內容建議；模型輸出的 `CONFIRMED`、假 event／Consent 欄位不會透過 B05 API 寫入合法確認事件。模型不存在／無法載入時可以純手動輸入條件，不宣稱 B03 AI 驗收完成。
+- **批次真機待測**：三個 N2 同義詞只成一個，UNKNOWN 無法確認、版本衝突、過去時間與缺日期拒絕、取消不寫、真正本人確認／重開保留、Goal 修改後候選失效、刪來源清空 Evidence／Confirmation、飛航模式、本機無網路上傳。結果登記至 `build/sprints/SPRINT-01_PROGRESS.md`，Android 手機未跑前一律 `NOT_RUN`。
+- **APK**：不因這次 B05 Coding 單獨建新 APK，至少兩個獨立功能與單元測試一起具備驗收條件才打包。
