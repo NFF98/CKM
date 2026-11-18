@@ -11,10 +11,12 @@ import {
 } from "./platform/local-drops";
 import { correctOcr, loadOcr, recognizeOcr, type OcrRecord } from "./platform/local-ocr";
 import {
-  importModel,
+  prepareModel,
+  pauseModelDownload,
   loadModelSuggestion,
   modelStatus,
   proposeModel,
+  type ModelStatus,
   type ModelSuggestion
 } from "./platform/local-model";
 import {
@@ -82,9 +84,14 @@ root.innerHTML = `
         <section class="note" aria-labelledby="model-heading">
           <h2 id="model-heading">裝置端 Gemma 4 E2B</h2>
           <p id="model-status" class="status" role="status" aria-live="polite">正在檢查本地模型…</p>
-          <p class="fineprint">模型約 2.59 GB，需先從官方來源下載到手機，再手動匯入。匯入只複製到 App 私人空間並驗證 SHA-256；不會把原圖或 OCR 送到雲端。</p>
-          <p class="fineprint"><a href="https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/main/gemma-4-E2B-it.litertlm" target="_blank" rel="noopener noreferrer">模型官方檔案（自行下載）</a></p>
-          <button type="button" class="secondary" id="import-model">從手機檔案匯入 Gemma 模型</button>
+          <p class="fineprint">第一次開啟會自動在 Wi-Fi／非計量網路下載約 2.59 GB 的官方模型，完成後自動驗證並安裝；完全不用自己找檔案。只下載公開模型，私人圖片、OCR 和學習內容不會送往雲端。下載完成後可以離線推論。</p>
+          <progress id="model-progress" max="100" value="0" aria-label="Gemma 模型下載進度" hidden></progress>
+          <p id="model-download-percent" class="fineprint" aria-live="polite"></p>
+          <div class="model-download-actions">
+            <button type="button" class="secondary" id="retry-model-download" hidden>繼續／重新下載模型（Wi-Fi）</button>
+            <button type="button" class="secondary" id="allow-mobile-download" hidden>改用行動網路下載 2.59 GB</button>
+            <button type="button" class="secondary" id="pause-model-download" hidden>暫停下載</button>
+          </div>
         </section>
 
         <dialog id="parameter-dialog" class="confirm-dialog"
@@ -172,7 +179,11 @@ const deleteStatus = get<HTMLElement>("#delete-status");
 const cancelDelete = get<HTMLButtonElement>("#cancel-delete");
 const confirmDelete = get<HTMLButtonElement>("#confirm-delete");
 const modelStatusView = get<HTMLElement>("#model-status");
-const importModelButton = get<HTMLButtonElement>("#import-model");
+const retryModelButton = get<HTMLButtonElement>("#retry-model-download");
+const allowMobileModelButton = get<HTMLButtonElement>("#allow-mobile-download");
+const pauseModelButton = get<HTMLButtonElement>("#pause-model-download");
+const modelProgress = get<HTMLProgressElement>("#model-progress");
+const modelDownloadPercent = get<HTMLElement>("#model-download-percent");
 const goalDialog = get<HTMLDialogElement>("#goal-dialog");
 const goalConfirmSummary = get<HTMLElement>("#goal-confirm-summary");
 const goalConfirmStatus = get<HTMLElement>("#goal-confirm-status");
@@ -234,6 +245,8 @@ const errors: Record<string, string> = {
   MODEL_HASH_MISMATCH: "模型完整性校驗不符，沒有安裝；請重新從官方來源下載。",
   MODEL_NO_SPACE: "手機儲存空間不足，模型約需 2.59 GB 加上暫存空間。",
   MODEL_IMPORT_FAILED: "匯入模型失敗，請檢查檔案與手機剩餘空間。",
+  MODEL_DOWNLOAD_FAILED: "Gemma 模型下載中斷。已保存下載進度，請檢查網路後按「繼續下載」。",
+  MODEL_DOWNLOAD_NETWORK: "網路暫時中斷，下載進度保留，重新連線後可續傳。",
   MODEL_LOAD_FAILED: "手機無法載入本地 Gemma 模型。",
   MODEL_INFERENCE_FAILED: "本地 Gemma 推論失敗，可稍後再試或自行修正。",
   MODEL_TIMEOUT: "Gemma 本地推論逾時，沒有使用雲端 AI。",
@@ -297,20 +310,81 @@ function assertNative(): void {
 }
 
 
+const displayDownloadMb = (bytes: number) => (bytes / 1_000_000).toFixed(0);
+let lastAutoResumeTry = 0;
+let statusUpdating = false;
+function renderModelProvisioning(s: ModelStatus): void {
+  const ready = s.installed && s.integrityVerified;
+  const pending = s.downloadState === "downloading" || s.downloadState === "verifying";
+  const pct = Math.floor(s.downloadedBytes / s.totalBytes * 100);
+  modelProgress.hidden = !pending;
+  modelProgress.value = pct;
+  modelDownloadPercent.textContent = pending || s.downloadedBytes > 0 && !ready
+    ? "已取得 " + displayDownloadMb(s.downloadedBytes) + " / " +
+      displayDownloadMb(s.totalBytes) + " MB（" + pct + "%）"
+    : "";
+  retryModelButton.hidden = ready || pending;
+  allowMobileModelButton.hidden = ready || pending;
+  pauseModelButton.hidden = !pending;
+  if (ready) {
+    modelStatusView.textContent =
+      "Gemma 4 E2B 已自動下載、通過 SHA-256 驗證並安裝，可以試本地推論。";
+  } else if (s.downloadState === "waiting_wifi") {
+    modelStatusView.textContent =
+      "等待 Wi-Fi（2.59 GB）。連線後會自動續傳；若願意使用行動數據，可自行選擇。";
+  } else if (s.downloadState === "downloading") {
+    modelStatusView.textContent = "CAKAMI 正在自動準備本地 AI 模型，請保持 App 開啟…";
+  } else if (s.downloadState === "verifying") {
+    modelStatusView.textContent = "下載完成，手機正在進行 SHA-256 完整性驗證…";
+  } else if (s.downloadState === "paused") {
+    modelStatusView.textContent = "模型下載已暫停；已下載部分保留，隨時可以繼續。";
+  } else if (s.downloadState === "error") {
+    modelStatusView.textContent = errorMessage(s.downloadError || "MODEL_DOWNLOAD_FAILED");
+  } else if (s.downloadState === "unavailable") {
+    modelStatusView.textContent = "目前裝置未支援此模型（Android 版本須符合需求）。";
+  } else {
+    modelStatusView.textContent = "模型尚未準備好。CAKAMI 會在 Wi-Fi 可用時自動準備。";
+  }
+}
+
 async function refreshModelStatus(): Promise<void> {
   if (!isTauri()) {
-    modelStatusView.textContent = "Web 預覽無法檢查手機模型。";
-    importModelButton.disabled = true;
+    modelStatusView.textContent = "Web 預覽無法下載或執行手機 AI 模型。";
+    retryModelButton.hidden = true;
+    allowMobileModelButton.hidden = true;
+    pauseModelButton.hidden = true;
     return;
   }
+  if (statusUpdating) return;
+  statusUpdating = true;
   try {
     const result = await modelStatus(rust);
-    modelStatusView.textContent = result.installed
-      ? "Gemma 4 E2B 已匯入並校驗；LiteRT-LM 推論尚待真機驗收。"
-      : "尚未匯入 Gemma 4 E2B；可以先用 OCR 與人工修正。";
+    renderModelProvisioning(result);
+    // Wi-Fi may appear while the App stays open. Try again at most once/15s.
+    if (result.downloadState === "waiting_wifi" && Date.now() - lastAutoResumeTry > 15_000) {
+      lastAutoResumeTry = Date.now();
+      renderModelProvisioning(await prepareModel(rust, false));
+    }
+  } catch (error) {
+    modelStatusView.textContent = errorMessage(error);
+  } finally {
+    statusUpdating = false;
+  }
+}
+
+/** One-stop first-launch setup: no SAF picker, no manual file or cloud inference. */
+async function initializeModelProvisioning(): Promise<void> {
+  if (!isTauri()) {
+    await refreshModelStatus();
+    return;
+  }
+  modelStatusView.textContent = "正在檢查手機狀態，若有 Wi-Fi 將自動下載模型…";
+  try {
+    renderModelProvisioning(await prepareModel(rust, false));
   } catch (error) {
     modelStatusView.textContent = errorMessage(error);
   }
+  window.setInterval(() => { void initializeModelProvisioning(); }, 2500);
 }
 
 async function renderModelPanel(assetId: string): Promise<void> {
@@ -974,20 +1048,42 @@ textButton.addEventListener("click", () => { void savePrivateText(); });
 pickButton.addEventListener("click", () => imagePicker.click());
 cameraButton.addEventListener("click", () => cameraPicker.click());
 get("#reload-drops").addEventListener("click", () => { void refreshDrops(); });
-importModelButton.addEventListener("click", () => {
-  if (importModelButton.disabled) return;
-  importModelButton.disabled = true;
-  modelStatusView.textContent = "從手機檔案匯入模型並校驗 SHA-256；大檔可能需較長時間…";
+retryModelButton.addEventListener("click", () => {
+  if (retryModelButton.disabled) return;
+  retryModelButton.disabled = true;
   void (async () => {
     try {
-      const result = await importModel(rust);
-      modelStatusView.textContent = result.installed
-        ? "Gemma 4 E2B 已完整校驗並匯入手機私人儲存空間。"
-        : "未完成模型匯入。";
+      renderModelProvisioning(await prepareModel(rust, false));
     } catch (error) {
       modelStatusView.textContent = errorMessage(error);
     } finally {
-      importModelButton.disabled = false;
+      retryModelButton.disabled = false;
+    }
+  })();
+});
+allowMobileModelButton.addEventListener("click", () => {
+  if (allowMobileModelButton.disabled) return;
+  allowMobileModelButton.disabled = true;
+  void (async () => {
+    try {
+      renderModelProvisioning(await prepareModel(rust, true));
+    } catch (error) {
+      modelStatusView.textContent = errorMessage(error);
+    } finally {
+      allowMobileModelButton.disabled = false;
+    }
+  })();
+});
+pauseModelButton.addEventListener("click", () => {
+  if (pauseModelButton.disabled) return;
+  pauseModelButton.disabled = true;
+  void (async () => {
+    try {
+      renderModelProvisioning(await pauseModelDownload(rust));
+    } catch (error) {
+      modelStatusView.textContent = errorMessage(error);
+    } finally {
+      pauseModelButton.disabled = false;
     }
   })();
 });
