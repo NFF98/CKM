@@ -1,5 +1,6 @@
 mod local_store;
 mod goal_draft;
+mod parameter_registry;
 mod platform;
 use platform::NativeAdapter;
 use serde::Serialize;
@@ -145,6 +146,43 @@ fn confirm_private_goal(
     goal_draft::GoalStore::open(&root)?.confirm(input)
 }
 
+/// B05: versioned allowlisted Concept Registry; T-01 complete whitelist remains OPEN.
+#[tauri::command]
+fn list_concept_registry() -> Vec<parameter_registry::RegistryConcept> {
+    parameter_registry::registry()
+}
+
+/// Only a confirmed B04 private Goal draft can own these private proposals.
+/// No model, source, event, visibility, consent or matching fields are writable.
+#[tauri::command]
+fn save_parameter_proposal(
+    app: tauri::AppHandle,
+    input: parameter_registry::SaveProposalInput,
+) -> Result<parameter_registry::PrivateParameter, String> {
+    let root = app.path().app_data_dir().map_err(|_| "STORAGE_UNAVAILABLE".to_string())?;
+    parameter_registry::ParameterStore::open(&root)?.save(input)
+}
+
+#[tauri::command]
+fn list_parameter_proposals(
+    app: tauri::AppHandle,
+    draft_id: String,
+) -> Result<Vec<parameter_registry::PrivateParameter>, String> {
+    let root = app.path().app_data_dir().map_err(|_| "STORAGE_UNAVAILABLE".to_string())?;
+    parameter_registry::ParameterStore::open(&root)?.list(&draft_id)
+}
+
+/// Explicit user action only: Rust makes its own confirmation event and increments version.
+/// Still private: B06 bounded slots and B08 sharing have NOT been implemented.
+#[tauri::command]
+fn confirm_private_parameter(
+    app: tauri::AppHandle,
+    input: parameter_registry::ConfirmParameterInput,
+) -> Result<parameter_registry::PrivateParameter, String> {
+    let root = app.path().app_data_dir().map_err(|_| "STORAGE_UNAVAILABLE".to_string())?;
+    parameter_registry::ParameterStore::open(&root)?.confirm(input)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -161,6 +199,10 @@ pub fn run() {
             load_model_suggestion,
             load_private_goal_draft,
             confirm_private_goal,
+            list_concept_registry,
+            save_parameter_proposal,
+            list_parameter_proposals,
+            confirm_private_parameter,
             save_drop,
             list_drops,
             load_drop,
