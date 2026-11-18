@@ -7,14 +7,14 @@
 | **B01** | IN_PROGRESS | Android 啟動＋Bridge：使用者回報成功；飛航模式 NOT_RUN | PR #6：TS／Rust Unit Tests PASS，Android APK 成功打包。使用者回報 Android 0.1.0 上可顯示 `Rust Bridge 已回應`、`平台：android`。未有飛航模式／adb 日誌；S1-AC01 尚未全部 PASS。 |
 | **B02** | IN_PROGRESS（刪除功能已 Coding，待 Android 真機回歸） | **最終 CI：TS 16/16、Rust 21/21、Harness、Android APK PASS**；舊版使用者真機：選圖／顯示／關閉重啟／飛航模式讀回 PASS；**新版刪除真機 NOT_RUN**；拍照／損毀檔／權限拒絕 NOT_RUN | PR #7 同分支：刪除確認、Rust SQLite／圖片檔清理／中斷恢復均已提交，最終可安裝 APK Artifact 見下。F-01 OPEN；B02 尚未完成。 |
 | **B03** | IN_PROGRESS（ML Kit OCR／人工修正＋Gemma 4 E2B LiteRT-LM 端到端 Coding；Native 尚待驗證） | **最新 TS 30/30、Rust 31/31、Harness PASS**；Android OCR／Gemma Kotlin **compile-only PASS**（未打包 APK）；手機 OCR／Gemma：NOT_RUN | PR #8 疊於 PR #7；Gemma 插件採 Android SAF 匯入 `.litertlm`（SHA-256 校驗），Rust 審核原文證據／僅私有候選，SQLite 保存、來源更正後失效；不含 Cloud AI／自動模型下載；Gemma 真機推論尚未 PASS。 |
-| B04 | NOT_STARTED | NOT_RUN | 內容 ≠ Goal |
+| **B04** | IN_PROGRESS（Rust Goal Gate、SQLite 私有草稿／確認事件與 S02 UI 已 Coding） | **TypeScript 37/37、Rust 41/41、Harness PASS**；Android 真機 NOT_RUN | [PR #9](https://github.com/NFF98/CKM/pull/9) 疊於 PR #8；「只收藏」完全不建立 Goal，「本人二次確認」才原子建立／修訂私有草稿；沒有公開／Consent／Matching。 |
 | B05 | NOT_STARTED | NOT_RUN | Parameter Registry |
 | B06 | NOT_STARTED | NOT_RUN | SQLite 原子交易＋8-slot |
 | B07 | NOT_STARTED | NOT_RUN | Intent 生命週期 |
 | B08 | NOT_STARTED | NOT_RUN | Consent／分享預覽 |
 | B09 | NOT_STARTED | NOT_RUN | 追問限制 |
 
-**目前 Coding PR**：[B01 PR #6](https://github.com/NFF98/CKM/pull/6)（基底 App）；[B02 PR #7](https://github.com/NFF98/CKM/pull/7)（疊在 B01 上）。尚未合併；以獨立 B-ID／AC 追蹤。
+**目前 Coding PR**：[B01 PR #6](https://github.com/NFF98/CKM/pull/6)（基底 App）→ [B02 PR #7](https://github.com/NFF98/CKM/pull/7) → [B03 PR #8](https://github.com/NFF98/CKM/pull/8) → [B04 PR #9](https://github.com/NFF98/CKM/pull/9)（逐層 Stacked、Draft，尚未合併）。依獨立 B-ID／AC 追蹤。
 
 **實際測試 Evidence**
 - TypeScript：[`B01 App` Run #44024038403](https://github.com/NFF98/CKM/actions/runs/44024038403)；TS Typecheck、Vitest **5/5 PASS**、Vite Build **PASS**。
@@ -39,6 +39,7 @@
 | B02－拍照與異常輸入回歸 | 功能入口已 Coding；既有部分單元測試 PASS | NOT_RUN | 拍照完成／取消、相機與相簿權限拒絕、損毀圖片、8MB 上限、空白文字、儲存錯誤、不自動外傳 |
 | B03－日文 OCR 與人工修正 | Kotlin／Rust／TS Coding 已提交 PR #8；TS 22/22、Rust 27/27、Harness PASS（不等於原生真機 PASS） | NOT_RUN | 斷網 OCR「パクる」與多行日文、UNKNOWN、人工修正、重開保留、更正後刪圖級聯、無原圖外傳；Android 原生 Gradle 編譯待批次驗證 |
 | B03－Gemma 4 E2B 本地模型 | Kotlin LiteRT-LM CPU + SAF 匯入／SHA-256 驗證 + Rust 受控 JSON/Evidence + SQLite/GUI Coding；TypeScript/Rust CI PASS；**Android Kotlin Gradle compile-only PASS** | NOT_RUN | 匯入 2.59GB 正式模型、Hash 不匹配拒絕、RAM/載入/回應時間、飛航模式、真實文字推論、拒絕偽造 Goal/Consent、重啟保存、修改 OCR 後舊建議失效，證明絕無 Cloud fallback |
+| B04－私人 Goal Gate／手動確認 | Rust／SQLite／TS／S02 UI 已 Coding；TypeScript 37/37、Rust 41/41、Harness PASS | NOT_RUN | 只收藏「パクる」與餐廳廣告 → 沒有草稿；使用者手動輸入 N2 找學伴 Goal → 二次確認後才建立本機草稿／事件；返回修改／取消不可寫入；改 Goal 需新事件／版本；殺掉 App 重啟仍在；刪來源級聯；離線確認；無公開／配對／Cloud 上傳 |
 
 **當前狀態**：待測佇列已記錄；**不得僅因 B02 刪除一項功能修改就再要求單獨安裝新版 APK**。待至少兩項功能在同一新批次達到可驗收狀態，再統一提供一份 APK 與整批驗收清單。先前 B02 的真機成功回報仍保留原始 Evidence。
 
@@ -96,3 +97,14 @@
 - **此 PASS 僅證明 Gradle Kotlin 編譯，不代表**：安裝後能開啟原生 Plugin、2.59GB 模型可成功匯入、模型可在目標手機推論、耗時／RAM／電池符合要求或 OCR 辨識正確。以上皆 `NOT_RUN`。
 - TypeScript 30/30、Rust 31/31、Harness PASS 的最早完整 [Run #44253299393](https://github.com/NFF98/CKM/actions/runs/44253299393)；最新 Rust／TS 改動若有，須看相應 PR CI。B03 維持 `IN_PROGRESS`，B04 仍 `NOT_STARTED`。
 - **APK**：沒有產出新 Artifact，等後續批次真機驗收才安排。
+
+## B04 Content ≠ Goal 交付與待驗收（2026-11-18）
+
+- **SSOT**：B04／S1-AC04；Functional S02 Gate G1；T05（餐廳廣告只有內容不等於需求）、E2E-02（只收藏「パクる」不配對）。
+- **程式位置**：PR #9 `feat/s1-b04-private-goal-gate`，從 PR #8 B03 分支延伸。新增 `build/app/src-tauri/src/goal_draft.rs`、`build/app/src/platform/private-goal.ts`、對應 TS/Rust tests，改 `src/main.ts` 串接 UI，保留每層獨立 PR。
+- **路徑 A：只收藏**：Drop、OCR、Gemma 只會存 private content／AI suggestion，`load_private_goal_draft` 為 `null`；「只收藏內容」按鈕不呼叫任何寫入命令。Goal 不會被 AI 捏造。
+- **路徑 B：明確確認 Goal**：使用者手動輸入要找真人學伴的 Goal → 點「確認 Goal」→ 二次對話框「確認我的 Goal」→ `confirm_private_goal`；Rust 驗證 UUID、限長、`confirmationAction=confirm_goal`、舊 revision，生成 event UUID，使用 SQLite IMMEDIATE Transaction 同步建立 `local_goal_drafts`（`draft_private`、`private`、`share_consent=0`）及 `local_goal_confirmation_events`。修改也需重新確認並產生新事件，無意圖自動發布。
+- **SQLite 保護**：`CHECK` 約束拒絕直接改成 published／active／consent=1，`FOREIGN KEY ON DELETE CASCADE` 隨來源刪除清空該私人草稿與確認歷史。完全不介入 B05–B08 的 Registry、8 slot、Lifecycle、Consent；保留後續工作。
+- **測試**：Rust 單元涵蓋只收藏無 Goal、人工確認／重開、過期版本、來源不存在、偽造 AI event／Consent、SQLite direct UPDATE 拒絕與刪除級聯、外鍵不容許假確認事件、Gemma 候選不會自動建 Goal；TS 合約與輸入防護。[最終程式 TypeScript 37/37 + Rust 41/41 PASS (Run #44257621647)](https://github.com/NFF98/CKM/actions/runs/44257621647)，[Harness PASS (Run #44257621807)](https://github.com/NFF98/CKM/actions/runs/44257621807)。受測 Source SHA `d153962e6f7c280410f7b42456bcf1a6f434bba7`；Android 真機仍未執行。
+- **真機待測**：文案／兩條入口／二次確認取消／真正事件／更新衝突／重啟保存／刪來源後全數消失／飛航模式／無資料上傳。全部 `NOT_RUN`。
+- **APK 節奏**：持續開發與自動測試；**不在此 commit 建立或提供 Android APK**。先把待測情境加入批次佇列，待後續整批功能穩定才安排 Android 真機測試。
