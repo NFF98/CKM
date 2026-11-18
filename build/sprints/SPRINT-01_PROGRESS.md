@@ -5,7 +5,7 @@
 | Task | 開發狀態 | 測試狀態 | 目前能客觀證明的交付／下一步 |
 |---|---|---|---|
 | **B01** | IN_PROGRESS | Android 啟動＋Bridge：使用者回報成功；飛航模式 NOT_RUN | PR #6：TS／Rust Unit Tests PASS，Android APK 成功打包。使用者回報 Android 0.1.0 上可顯示 `Rust Bridge 已回應`、`平台：android`。未有飛航模式／adb 日誌；S1-AC01 尚未全部 PASS。 |
-| **B02** | IN_PROGRESS（新增刪除收藏程式，待 CI／真機重測） | 舊版 CI：TS 13/13、Rust 13/13、APK、Harness PASS；**使用者真機**：選圖／顯示／關閉重啟／飛航模式讀回 PASS；刪除：舊版缺失，新版 NOT_RUN；拍照／損毀檔／權限拒絕 NOT_RUN | PR #7：既有本地 Drop，新增確認刪除、Rust SQLite／圖片檔刪除與中斷恢復；須等新版 CI、APK 與真機驗收，F-01 OPEN。 |
+| **B02** | IN_PROGRESS（刪除功能已 Coding，待 Android 真機回歸） | **最終 CI：TS 16/16、Rust 21/21、Harness、Android APK PASS**；舊版使用者真機：選圖／顯示／關閉重啟／飛航模式讀回 PASS；**新版刪除真機 NOT_RUN**；拍照／損毀檔／權限拒絕 NOT_RUN | PR #7 同分支：刪除確認、Rust SQLite／圖片檔清理／中斷恢復均已提交，最終可安裝 APK Artifact 見下。F-01 OPEN；B02 尚未完成。 |
 | B03 | NOT_STARTED | NOT_RUN | 真機本地 OCR／Gemma E2B；最大技術風險 |
 | B04 | NOT_STARTED | NOT_RUN | 內容 ≠ Goal |
 | B05 | NOT_STARTED | NOT_RUN | Parameter Registry |
@@ -40,6 +40,15 @@
 
 - **已回報真機 PASS（舊版 B02 APK / Run #44048635171）**：從手機選擇含「パクる」的圖片，圖片成功保存／顯示；完全關閉 App 再開收藏仍存在；飛航模式下依然能讀回收藏。這只能證明圖片保存和讀取，**不代表「パクる」已由 OCR 辨識**（B03 尚未實作）。
 - **已發現 FAIL（舊版）**：無「刪除收藏」入口。於 PR #7 同一分支新增單筆刪除與二次確認；僅刪 App-private 複本與 SQLite 文字／圖片紀錄，不刪相簿原圖。
-- **新增單元測試案例**：TS 刪除 Contract／非法 ID／失敗回應；Rust 文字與圖片刪除、重啟後消失、重複內容獨立刪除、路徑穿越拒絕、圖片缺失不刪 DB、SQL 故障回復、刪除中斷恢復。**新測試 CI 尚未確認，不標 PASS。**
+- **新增單元測試案例**：TS 刪除 Contract／非法 ID／失敗回應；Rust 文字與圖片刪除、重啟後消失、重複內容獨立刪除、路徑穿越拒絕、圖片缺失不刪 DB、SQL 故障回復、刪除中斷恢復。**最終 CI 確認通過，見下列 run 和 commit。**
 - **仍待真機**：使用新版 APK「新增圖片／文字 → 點刪除 → 取消不刪 → 再點刪除並確認 → 清單和預覽消失 → 強制關閉 App → 重開後不再出現 → 飛航模式重測」。拍照、損毀圖片、權限拒絕、無自動外傳仍需另行驗收。
 - **不得合併或宣稱 B02 完成**：PR #6、#7 仍為 Stacked PR；當前維持 B02 IN_PROGRESS，B03–B09 NOT_STARTED。
+
+### B02 刪除最終 CI 與 APK（2026-11-18）
+
+- **受測程式 commit**：`5ae27328629265dde63e3d3880eb813fe5a5f082`（PR #7 分支，含 SQLite 刪除／圖片暫存／中斷恢復／清理錯誤提示）。
+- **[TypeScript／Rust CI #44209853504](https://github.com/NFF98/CKM/actions/runs/44209853504)**：TypeScript typecheck／Vitest 16/16／Vite Build PASS；Rust 21/21 PASS。
+- **[Harness #44209853490](https://github.com/NFF98/CKM/actions/runs/44209853490)**：PASS。
+- **[Android ARM64 Debug APK #44209853489](https://github.com/NFF98/CKM/actions/runs/44209853489)**：Build／Artifact PASS；Artifact ID `14384594084`、名稱 `cakami-b01-android-arm64-debug`（沿用舊名稱，此 run 是含刪除功能的 B02 新版）。
+- **Android 真機新版刪除：NOT_RUN**。需測「新增 → 刪除按鈕 → 取消 → 再次確認刪除 → 強制關閉 → 重開已不存在」，另測文字、重複圖片及飛航模式。APK CI PASS 不代表此真機案例 PASS。
+- 若新版 APK 與舊版 debug 簽章不符，卸載再安裝會清除原 App 資料；須用**新版內重新建立的測試資料**跑完整刪除回歸。
