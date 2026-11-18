@@ -76,3 +76,17 @@ npm run tauri ios dev
 - **新版回歸測試**：保存一張合成測試圖片與一筆測試文字 → 點刪除再取消，確認仍在 → 再點刪除並確認，清單消失 → 完全關閉重開 → 兩筆都沒有；重複內容各存一筆時，刪掉一筆不應刪另一筆；飛航模式重複測試。
 - **回報方式**：提供是否成功及 Android 版本／操作情境即可，不要上傳真實私人圖片。
 - **狀態**：新 Rust／TS 測試和 Android APK CI 以此 PR 新 commit 的 workflow 為準；新版 Android 刪除真機驗收仍 NOT_RUN。不可沿用舊版 CI 當作新版 PASS。
+
+## B03｜Gemma 4 E2B 真正 On-device 推論（2026-11-18）
+
+B03 目前已提交 Rust ↔ Android Kotlin LiteRT-LM ↔ SQLite 的 Coding，但**Android 原生編譯／裝置推論驗收與記憶體效能尚未通過**。本地模型不會像 Cloud AI 一樣自動可用。
+
+- **Runtime**：`com.google.ai.edge.litertlm:litertlm-android:0.16.1`，Android CPU-first；鎖版是為了相容 Tauri 模板所使用的 Kotlin 2.2.x 編譯器。不得換成 `latest.release` 造成不可重現建置。
+- **來源**：[Hugging Face 官方 LiteRT Community / Gemma 4 E2B](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/main/gemma-4-E2B-it.litertlm)；正確檔名：`gemma-4-E2B-it.litertlm`，約 2.59 GB。SHA-256：`181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c`。
+- **不含在 APK 中**：因體積龐大且節省重複編譯／下載，使用者**自行從官方來源取得**檔案，於 Android App 點「從手機檔案匯入 Gemma 模型」。使用 Android SAF Picker，複製至 App-private storage 時串流計算 SHA-256；不符拒絕，無任何自動下載／雲端推論。
+- **AI 使用入口**：收藏圖片 → 真正 Android 本地 OCR 或手動修正；或直接保存文字 → 點「用手機 Gemma 理解這筆內容」。僅將該收藏在本機 SQLite 的已保存文字交給 Kotlin LiteRT-LM；原圖不會傳給模型以外的端點，不會上傳任何私人內容。
+- **防 AI 捏造**：只接受嚴格 JSON（`evidenceQuote/contentHint/uncertainty`），其中 `evidenceQuote` 必須逐字存在於原文。Rust 拒絕其他欄位、假 `Goal`／`Consent`／`CONFIRMED`，建議只存 SQLite `local_model_suggestions` 且 `status=suggested_private`，不會發布配對意圖。
+- **資料失效**：更正 OCR 或刪除原圖後，舊模型建議不再可見；刪圖時 SQLite 外鍵級聯清除模型建議。
+- **平台限制**：Android API 26 起允許匯入；iOS／desktop 暫未提供原生 LiteRT-LM Adapter，明確顯示不可用。真機 RAM、CPU 初始化時間、輸出品質尚未驗證。
+- **目前待驗證**：Android Kotlin/Gradle compile-only CI、裝置 SHA256 匯入、首次／再次推論、飛航模式、錯誤 JSON、模型不完整與拒絕載入、離線無外傳、120 秒超時與低 RAM、模型結果／來源與 SQLite 重啟持久化。
+- **批次策略**：這輪不打包、不提供新 APK；維持「至少兩個可驗收功能一起打包一次」原則。Android Gradle 編譯檢查也不會產生 APK Artifact。
