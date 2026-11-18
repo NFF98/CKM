@@ -1049,4 +1049,80 @@ mod tests {
         assert_eq!(store.load_ocr(&asset.id).unwrap().status, "not_run");
     }
 
+
+    fn model_reply(json: &str) -> NativeReply {
+        NativeReply {
+            raw_text: json.into(), model_id: "gemma-4-E2B-it".into(),
+            runtime: "litert-lm-android-0.16.1".into(),
+            backend: "cpu".into(), elapsed_ms: 98,
+        }
+    }
+
+    #[test]
+    fn b03_model_saves_evidence_only_as_private_suggestion() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる JLPT N2")).unwrap();
+        let input = store.model_input_for_asset(&saved.id).unwrap();
+        let reply = model_reply(r#"{"evidenceQuote":"パクる","contentHint":"日語學習詞彙","uncertainty":null}"#);
+        let suggestion = store.save_model_suggestion(&saved.id, &input, reply).unwrap();
+        assert_eq!(suggestion.status, "suggested_private");
+        assert_eq!(suggestion.evidence_quote, "パクる");
+        drop(store);
+        let reopened = LocalStore::open(dir.path()).unwrap();
+        assert_eq!(reopened.load_model_suggestion(&saved.id).unwrap().unwrap().content_hint,
+                   Some("日語學習詞彙".into()));
+    }
+
+    #[test]
+    fn b03_model_rejects_fabricated_quote_and_consent_forgery() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        for json in [
+            r#"{"evidenceQuote":"不存在","contentHint":null,"uncertainty":null}"#,
+            r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"consent":true}"#,
+            r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null,"goal":"Study Match"}"#,
+            "not valid JSON",
+        ] {
+            assert_eq!(store.save_model_suggestion(&saved.id, "パクる", model_reply(json))
+                       .unwrap_err(), "MODEL_INVALID_OUTPUT");
+        }
+        assert!(store.load_model_suggestion(&saved.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn b03_model_rejects_stale_ocr_correction_and_deletion_cascades() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(png_drop(&tiny_png())).unwrap();
+        assert_eq!(store.model_input_for_asset(&saved.id).unwrap_err(), "MODEL_INPUT_UNKNOWN");
+        store.correct_ocr(&saved.id, "パクる").unwrap();
+        let before = store.model_input_for_asset(&saved.id).unwrap();
+        let reply = model_reply(r#"{"evidenceQuote":"パクる","contentHint":"學習","uncertainty":null}"#);
+        store.save_model_suggestion(&saved.id, &before, reply).unwrap();
+        store.correct_ocr(&saved.id, "あたらしい").unwrap();
+        assert!(store.load_model_suggestion(&saved.id).unwrap().is_none());
+        assert_eq!(store.save_model_suggestion(&saved.id, &before,
+            model_reply(r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null}"#))
+            .unwrap_err(), "MODEL_STALE_INPUT");
+        store.delete(&saved.id).unwrap();
+        let conn = store.connect().unwrap();
+        let n: i64 = conn.query_row("SELECT count(*) FROM local_model_suggestions", [],
+            |row| row.get(0)).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn b03_model_rejects_untrusted_runtime_and_bad_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(text_drop("パクる")).unwrap();
+        let mut reply = model_reply(r#"{"evidenceQuote":"パクる","contentHint":null,"uncertainty":null}"#);
+        reply.runtime = "cloud_ai".into();
+        assert_eq!(store.save_model_suggestion(&saved.id, "パクる", reply).unwrap_err(),
+                   "MODEL_INVALID_OUTPUT");
+        assert_eq!(store.model_input_for_asset("../../secret").unwrap_err(), "INVALID_ASSET_ID");
+    }
+
 }
