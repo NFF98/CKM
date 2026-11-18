@@ -153,6 +153,7 @@ const errors: Record<string, string> = {
   DATABASE_READ_FAILED: "私人資料庫讀取失敗，請稍後再試。",
   OCR_MODEL_UNAVAILABLE: "此裝置尚未提供 OCR 模型，請直接輸入人工修正。",
   OCR_RECOGNITION_FAILED: "手機本地 OCR 辨識失敗，請重試或人工輸入。",
+  OCR_TIMEOUT: "手機 OCR 已超過 20 秒，請重試或人工修正；沒有轉送雲端。",
   OCR_INVALID_INPUT: "圖片辨識輸入無效，請重新選擇圖片。",
   OCR_INVALID_RESULT: "本地 OCR 回傳資料不合法，沒有採用辨識結果。",
   OCR_IMAGE_REQUIRED: "這不是圖片收藏，不需 OCR。",
