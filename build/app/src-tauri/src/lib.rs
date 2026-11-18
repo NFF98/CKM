@@ -93,22 +93,49 @@ fn correct_ocr(
     private_store(&app)?.correct_ocr(&id, &corrected_text)
 }
 
-/// E2B 尚未有已驗證可部署的 Gemma Runtime／模型，明確拒絕，絕不使用 Cloud fallback。
+/// 可觀測的本地模型狀態；模型未匯入不會假顯示 Ready。
 #[tauri::command]
-fn local_model_propose(_app: tauri::AppHandle, _id: String) -> Result<(), String> {
-    Err("MODEL_UNAVAILABLE".into())
+fn local_model_status(app: tauri::AppHandle) -> Result<tauri_plugin_cakami_model::ModelStatus, String> {
+    tauri_plugin_cakami_model::status(&app)
+}
+
+/// 使用 Android SAF 讓本人選擇既有 Gemma 檔案並校驗 SHA-256；絕不自動下載。
+#[tauri::command]
+async fn import_local_model(app: tauri::AppHandle) -> Result<tauri_plugin_cakami_model::ModelStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || tauri_plugin_cakami_model::import_model(&app))
+        .await.map_err(|_| "MODEL_IMPORT_FAILED".to_string())?
+}
+
+/// 僅由 Rust 從本地資料構造 prompt；結果在 Rust 驗證 evidence 並存私有 SQLite。
+#[tauri::command]
+async fn local_model_propose(app: tauri::AppHandle, id: String) -> Result<local_store::ModelSuggestion, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = private_store(&app)?;
+        let input = store.model_input_for_asset(&id)?;
+        let response = tauri_plugin_cakami_model::propose(&app, input.clone())?;
+        private_store(&app)?.save_model_suggestion(&id, &input, response)
+    }).await.map_err(|_| "MODEL_INFERENCE_FAILED".to_string())?
+}
+
+#[tauri::command]
+fn load_model_suggestion(app: tauri::AppHandle, id: String) -> Result<Option<local_store::ModelSuggestion>, String> {
+    private_store(&app)?.load_model_suggestion(&id)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_cakami_ocr::init())
+        .plugin(tauri_plugin_cakami_model::init())
         .invoke_handler(tauri::generate_handler![
             bridge_health,
             local_ocr_recognize,
             load_ocr,
             correct_ocr,
+            local_model_status,
+            import_local_model,
             local_model_propose,
+            load_model_suggestion,
             save_drop,
             list_drops,
             load_drop,
