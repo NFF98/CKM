@@ -360,8 +360,10 @@ impl LocalStore {
         }
 
         if let Some((_, pending)) = staged {
-            // DB 已提交成功；若磁碟清理失敗，下一次 open 會再清理孤兒暫存檔。
-            let _ = fs::remove_file(pending);
+            // DB 已提交，但圖片暫存檔也必須真的清除才可回傳成功。
+            // 失敗時保留暫存檔供下次 open 重試，並清楚回報未完全清理。
+            fs::remove_file(pending)
+                .map_err(|_| store_error("STORAGE_CLEANUP_PENDING"))?;
         }
         Ok(true)
     }
