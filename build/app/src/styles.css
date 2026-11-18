@@ -72,3 +72,32 @@ textarea {
 .asset-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; font-family: inherit; line-height: 1.65; }
 .boundary { background: #f1f8f6; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; } }
+
+/* B02：手機上的刪除操作必須能單獨點擊，且預先顯示明確確認對話框。 */
+.asset-row { display: flex; align-items: center; gap: 8px; }
+.asset-row .asset-link { flex: 1; min-width: 0; }
+.delete-action {
+  min-height: 44px; min-width: 60px; padding: 10px 8px;
+  border: 1px solid #bc5b56; border-radius: 10px;
+  background: #fff; color: #92251e; font-weight: 700;
+  cursor: pointer;
+}
+.delete-action:disabled { opacity: .5; cursor: wait; }
+.confirm-dialog {
+  width: min(420px, calc(100% - 32px)); max-height: 85dvh;
+  border: 1px solid #c8d9d6; border-radius: 18px;
+  padding: 22px; background: #fff; color: #102124;
+}
+.confirm-dialog::backdrop { background: rgba(10, 32, 32, .66); }
+.confirm-dialog h2 { line-height: 1.35; }
+.confirm-dialog p { line-height: 1.6; }
+.delete-item { overflow-wrap: anywhere; font-weight: 650; }
+.delete-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+.delete-dialog-actions .secondary { margin-bottom: 0; }
+.danger {
+  min-height: 48px; width: 100%; padding: 10px;
+  border: 1px solid #a22b28; border-radius: 12px;
+  background: #a22b28; color: white; font: inherit;
+  font-weight: 700; cursor: pointer;
+}
+.danger:disabled { opacity: .6; cursor: wait; }
