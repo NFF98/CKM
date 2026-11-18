@@ -10,6 +10,13 @@ import {
   type ImageSource,
 } from "./platform/local-drops";
 import { correctOcr, loadOcr, recognizeOcr, type OcrRecord } from "./platform/local-ocr";
+import {
+  importModel,
+  loadModelSuggestion,
+  modelStatus,
+  proposeModel,
+  type ModelSuggestion
+} from "./platform/local-model";
 import "./styles.css";
 
 type View = "drop" | "diagnostic";
@@ -59,6 +66,13 @@ root.innerHTML = `
           <div id="drop-preview" class="preview" hidden aria-live="polite"></div>
         </section>
 
+        <section class="note" aria-labelledby="model-heading">
+          <h2 id="model-heading">裝置端 Gemma 4 E2B</h2>
+          <p id="model-status" class="status" role="status" aria-live="polite">正在檢查本地模型…</p>
+          <p class="fineprint">模型約 2.59 GB，需先從官方來源下載到手機，再手動匯入。匯入只複製到 App 私人空間並驗證 SHA-256；不會把原圖或 OCR 送到雲端。</p>
+          <p class="fineprint"><a href="https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/main/gemma-4-E2B-it.litertlm" target="_blank" rel="noopener noreferrer">模型官方檔案（自行下載）</a></p>
+          <button type="button" class="secondary" id="import-model">從手機檔案匯入 Gemma 模型</button>
+        </section>
         <dialog id="delete-dialog" class="confirm-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
           <h2 id="delete-title">確定要刪除這筆收藏？</h2>
           <p id="delete-description">這項操作無法復原。確認後，手機內的收藏紀錄與對應私人圖片會一起刪除，不會影響原本相簿中的照片。</p>
@@ -122,6 +136,8 @@ const deleteItem = get<HTMLElement>("#delete-item");
 const deleteStatus = get<HTMLElement>("#delete-status");
 const cancelDelete = get<HTMLButtonElement>("#cancel-delete");
 const confirmDelete = get<HTMLButtonElement>("#confirm-delete");
+const modelStatusView = get<HTMLElement>("#model-status");
+const importModelButton = get<HTMLButtonElement>("#import-model");
 
 const rust: InvokeAdapter = (command, args) => invoke(command, args);
 let saving = false;
@@ -160,7 +176,23 @@ const errors: Record<string, string> = {
   OCR_IMAGE_TOO_LARGE: "圖片像素過大，手機無法安全辨識；可人工輸入文字。",
   OCR_IMAGE_INVALID: "無法解析圖片內容，請直接人工輸入。",
   OCR_OUT_OF_MEMORY: "手機記憶體不足，已停止辨識；可人工輸入文字。",
-  MODEL_UNAVAILABLE: "Gemma E2B 尚未安裝，不會使用雲端 AI 替代。",
+  MODEL_UNAVAILABLE: "這台裝置尚未具備 Gemma 推論能力；不會切換到雲端 AI。",
+  MODEL_NOT_INSTALLED: "尚未匯入經驗證的 Gemma 4 E2B 模型。",
+  MODEL_IMPORT_CANCELLED: "已取消匯入，沒有更動私人資料。",
+  MODEL_INVALID_FILE: "請選擇官方 gemma-4-E2B-it.litertlm 模型檔。",
+  MODEL_HASH_MISMATCH: "模型完整性校驗不符，沒有安裝；請重新從官方來源下載。",
+  MODEL_NO_SPACE: "手機儲存空間不足，模型約需 2.59 GB 加上暫存空間。",
+  MODEL_IMPORT_FAILED: "匯入模型失敗，請檢查檔案與手機剩餘空間。",
+  MODEL_LOAD_FAILED: "手機無法載入本地 Gemma 模型。",
+  MODEL_INFERENCE_FAILED: "本地 Gemma 推論失敗，可稍後再試或自行修正。",
+  MODEL_TIMEOUT: "Gemma 本地推論逾時，沒有使用雲端 AI。",
+  MODEL_OUT_OF_MEMORY: "手機記憶體不足，已停止本地推論。",
+  MODEL_BUSY: "本地模型正在處理其他工作，請稍後重試。",
+  MODEL_INPUT_UNKNOWN: "尚無可辨識的日文；請先 OCR 或保存人工更正。",
+  MODEL_INPUT_TOO_LARGE: "原始內容太長，暫時無法進行裝置端理解。",
+  MODEL_INPUT_INVALID: "本地模型輸入不合法，操作已停止。",
+  MODEL_INVALID_OUTPUT: "模型輸出無法核對原文證據，已拒絕保存。",
+  MODEL_STALE_INPUT: "你已更新原文／OCR，舊的模型建議已失效，請重新推論。",
 };
 
 function errorMessage(error: unknown): string {
@@ -195,6 +227,83 @@ function updateBusy(isBusy: boolean): void {
 
 function assertNative(): void {
   if (!isTauri()) throw new Error("此為網頁預覽，請使用 Android／iOS App 儲存私人資料。");
+}
+
+
+async function refreshModelStatus(): Promise<void> {
+  if (!isTauri()) {
+    modelStatusView.textContent = "Web 預覽無法檢查手機模型。";
+    importModelButton.disabled = true;
+    return;
+  }
+  try {
+    const result = await modelStatus(rust);
+    modelStatusView.textContent = result.installed
+      ? "Gemma 4 E2B 已匯入並校驗；LiteRT-LM 推論尚待真機驗收。"
+      : "尚未匯入 Gemma 4 E2B；可以先用 OCR 與人工修正。";
+  } catch (error) {
+    modelStatusView.textContent = errorMessage(error);
+  }
+}
+
+async function renderModelPanel(assetId: string): Promise<void> {
+  if (selectedAssetId !== assetId) return;
+  const panel = document.createElement("section");
+  panel.className = "model-panel";
+  panel.setAttribute("aria-label", "私人 Gemma 內容理解");
+  const heading = document.createElement("h3");
+  heading.textContent = "Gemma 私人內容建議";
+  const state = document.createElement("p");
+  state.className = "status";
+  state.setAttribute("role", "status");
+  state.setAttribute("aria-live", "polite");
+  const output = document.createElement("div");
+  output.className = "model-output";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary";
+  button.textContent = "用手機 Gemma 理解這筆內容";
+  const note = document.createElement("p");
+  note.className = "fineprint";
+  note.textContent = "只依保存的文字或 OCR 推論；所有建議皆為私有候選，不能直接確認 Goal、Need、Offer 或分享同意。";
+  panel.append(heading, state, output, button, note);
+  preview.append(panel);
+
+  function showSuggestion(result: ModelSuggestion): void {
+    output.replaceChildren();
+    const quote = document.createElement("p");
+    quote.textContent = "原文證據：" + result.evidenceQuote;
+    const hint = document.createElement("p");
+    hint.textContent = "可能內容：" + (result.contentHint || "未知");
+    const uncertain = document.createElement("p");
+    uncertain.textContent = "仍不確定：" + (result.uncertainty || "尚未確認是否正確");
+    output.append(quote, hint, uncertain);
+    state.textContent = "Gemma 本地建議已保存（尚未本人確認） · " + result.elapsedMs + " ms";
+  }
+  try {
+    const saved = await loadModelSuggestion(rust, assetId);
+    if (selectedAssetId === assetId) {
+      if (saved) showSuggestion(saved);
+      else state.textContent = "尚無經來源核對的模型建議。";
+    }
+  } catch (error) {
+    if (selectedAssetId === assetId) state.textContent = errorMessage(error);
+  }
+  button.addEventListener("click", () => {
+    if (selectedAssetId !== assetId) return;
+    button.disabled = true;
+    state.textContent = "正在手機內執行 Gemma 4 E2B（不會連線到雲端 AI）…";
+    void (async () => {
+      try {
+        const result = await proposeModel(rust, assetId);
+        if (selectedAssetId === assetId) showSuggestion(result);
+      } catch (error) {
+        if (selectedAssetId === assetId) state.textContent = errorMessage(error);
+      } finally {
+        button.disabled = false;
+      }
+    })();
+  });
 }
 
 async function refreshDrops(): Promise<void> {
@@ -403,6 +512,7 @@ async function openAsset(id: string): Promise<void> {
       content.textContent = asset.text || "";
       preview.append(content);
     }
+    if (selectedAssetId === id) await renderModelPanel(id);
     const note = document.createElement("p");
     note.className = "fineprint";
     note.textContent = "這是你自己保存的內容，尚未產生找學伴 Goal，也沒有分享。";
@@ -511,7 +621,25 @@ checkButton.addEventListener("click", () => { void runBridgeCheck(); });
 textButton.addEventListener("click", () => { void savePrivateText(); });
 pickButton.addEventListener("click", () => imagePicker.click());
 cameraButton.addEventListener("click", () => cameraPicker.click());
-get("#reload-drops").addEventListener("click", () => { void refreshDrops(); });
+get("#reload-drops").addEventListener("click", () => { void refreshDrops();
+void refreshModelStatus(); });
+importModelButton.addEventListener("click", () => {
+  if (importModelButton.disabled) return;
+  importModelButton.disabled = true;
+  modelStatusView.textContent = "從手機檔案匯入模型並校驗 SHA-256；大檔可能需較長時間…";
+  void (async () => {
+    try {
+      const result = await importModel(rust);
+      modelStatusView.textContent = result.installed
+        ? "Gemma 4 E2B 已完整校驗並匯入手機私人儲存空間。"
+        : "未完成模型匯入。";
+    } catch (error) {
+      modelStatusView.textContent = errorMessage(error);
+    } finally {
+      importModelButton.disabled = false;
+    }
+  })();
+});
 cancelDelete.addEventListener("click", () => deleteDialog.close());
 confirmDelete.addEventListener("click", () => { void deleteSelected(); });
 deleteDialog.addEventListener("cancel", (event) => {
