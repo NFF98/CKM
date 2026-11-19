@@ -193,6 +193,25 @@ fn confirm_private_goal(
     goal_draft::GoalStore::open(&root)?.confirm(input)
 }
 
+/// US-01D/B07: user-only local withdrawal/deadline; still no Cloud sync.
+#[tauri::command]
+fn update_private_goal_lifecycle(
+    app: tauri::AppHandle,
+    input: goal_draft::LifecycleUpdateInput,
+) -> Result<goal_draft::PrivateGoalDraft, String> {
+    let root = app.path().app_data_dir().map_err(|_| "STORAGE_UNAVAILABLE".to_string())?;
+    goal_draft::GoalStore::open(&root)?.update_lifecycle(input)
+}
+
+/// US-01D/B08: private local preview only; approval and Consent are NOT implemented.
+#[tauri::command]
+fn preview_private_goal_share(
+    app: tauri::AppHandle, asset_id: String,
+) -> Result<goal_draft::PrivateSharePreview, String> {
+    let root=app.path().app_data_dir().map_err(|_|"STORAGE_UNAVAILABLE".to_string())?;
+    goal_draft::GoalStore::open(&root)?.share_preview(&asset_id)
+}
+
 /// B05: versioned allowlisted Concept Registry; T-01 complete whitelist remains OPEN.
 #[tauri::command]
 fn list_concept_registry() -> Vec<parameter_registry::RegistryConcept> {
@@ -258,6 +277,8 @@ pub fn run() {
             answer_intent_question,
             load_private_goal_draft,
             confirm_private_goal,
+            update_private_goal_lifecycle,
+            preview_private_goal_share,
             list_concept_registry,
             preview_parameter_concept,
             save_parameter_proposal,
