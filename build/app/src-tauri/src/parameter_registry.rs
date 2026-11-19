@@ -163,6 +163,13 @@ fn normalize(alias: &str, value: Option<&str>) -> Result<Normalized, String> {
     })
 }
 
+/// B06 capacity decision is independent of the live T-01 Registry whitelist.
+/// A synthetic 8+1 test may exercise this boundary without approving test concepts.
+fn lowest_free_matching_slot(occupied: &[i64]) -> Result<i64, String> {
+    (0_i64..8_i64).find(|index| !occupied.contains(index))
+        .ok_or_else(|| err("B06_SLOT_BUDGET_EXCEEDED"))
+}
+
 fn validate_expiry(policy: &str, expires: Option<i64>, now: i64) -> Result<(), String> {
     match (policy, expires) {
         ("intent_lifecycle", None) => Ok(()),
@@ -544,8 +551,7 @@ impl ParameterStore {
                 .map_err(|_| err("DATABASE_READ_FAILED"))?;
             collected
         };
-        let slot=(0_i64..8_i64).find(|index| !occupied.contains(index))
-            .ok_or_else(|| err("B06_SLOT_BUDGET_EXCEEDED"))?;
+        let slot=lowest_free_matching_slot(&occupied)?;
         tx.execute(
             "INSERT INTO local_matching_slots
                (parameter_id,draft_id,concept_id,slot_index,goal_revision,created_at_ms)
