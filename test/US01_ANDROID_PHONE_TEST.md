@@ -3,6 +3,10 @@
 > 這份清單是 **NOT_RUN** 的實機驗收操作，不是 CI PASS 宣告。
 > 僅使用 PR #17 最新 commit 所打包的 ARM64 debug APK；請先核對 GitHub Actions 的 head SHA 和 artifact。
 
+## 安裝阻斷：既有 Debug APK 簽章不固定（2026-11-19）
+
+**目前這輪 APK 即使 GitHub Build PASS，也不代表可以覆蓋手機既有 App。** 若手機顯示日文「パッケージが既存のパッケージと競合するため、アプリをインストールできませんでした」，先暫停這份 E2E 驗收，**不要解除安裝或清除資料**。已核對原 Workflow 每次 GitHub Runner 使用臨時 Debug 簽章，因此新、舊 APK 很可能不同私鑰。最新工作流程已要求固定金鑰、沒有 GitHub Secret 就拒絕輸出不穩定新包。修復及安全憑證比對／同金鑰重簽方式見 [Android 簽章衝突復原](ANDROID_SIGNING_RECOVERY.md)。
+
 ## 安裝注意
 
 - 優先覆蓋安裝相同 App ID／簽章的 APK。**不要先解除安裝／清除 App 資料**：那會刪除 2.59 GB 的 Gemma 與私人 SQLite。若出現 Android 簽章衝突，先記錄畫面並回報，不要硬刪資料。
