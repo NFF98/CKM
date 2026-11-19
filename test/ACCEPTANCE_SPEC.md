@@ -62,6 +62,20 @@
 
 此節對應 [Universal Intent Engine 設計草案](../design/ACTION_INTELLIGENCE_ARCHITECTURE_v1_DRAFT.md#1a-跨領域共用的真正大腦universal-intent-engine2026-11-19-user-方向設計草案)，並需在正式 domain 開放前逐領域增加真實視覺與多人端到端驗收。
 
+## AI-TEXT-8｜純文字 → 意圖候選 → B04/B05 確認 → B06 最多 8 slots（設計草案，NOT_RUN）
+
+| Case | 操作 | 必須驗證 |
+|---|---|---|
+| AI-TEXT-01 | **純文字**「想找人一起練 JLPT N2 口語」 | 不經 OCR；B03 產生有證據的私人 Study/Goal 候選；B04 可直接選擇/編輯並本人確認；B05 僅核准 Concept 能確認；不能自動 Consent |
+| AI-TEXT-02 | **純文字**「パクる」 | 詞義可解釋；意圖/領域保持 UNKNOWN；不能依 P1 市場或過往偏好強制認定找 N2 學伴；不填滿 8 slots |
+| AI-TEXT-03 | **純文字**「想找人一起研究 BMW E46 改裝，週末有空」 | Domain 可為 Car；Goal/Need/主題/時間作獨立候選，Offer/精確時間/地點/技能 UNKNOWN；不得把 8 個展示面向直接算作 8 個合法 Matching slots；P1 不對外配對 Car |
+| AI-TEXT-04 | B09 初次 Goal 確認及追問 | 最多 **3 題** AI 主動詢問（含 Goal 確認），一個答案可以確認多個合法概念；已足夠可 0～1 題，不得要求逐一回答 8 題 |
+| AI-TEXT-05 | B06 已有 8 種有效 Matching Concepts，嘗試新增第 9 種 | SQL/Rust 拒絕或請本人明確決定，絕不能自動刪掉硬條件；UNKNOWN/私人 Content 不占活躍 slot |
+| AI-TEXT-06 | 將 Gemma 報告的「85% confidence」當作可發布意圖 | Rust 必須拒絕用模型自報信心替代 B04/B05 本人確認與 B08 Consent；未有經驗校準不得把 85% 稱為準確率 |
+| AI-TEXT-07 | 用獨立標註純文字、OCR、跨領域語境與 UNKNOWN 測試集衡量意圖 | 分別報告**確認前 top-1 正確率、UNKNOWN 正確拒判率、確認後意圖一致率、誤確認率、問題數**；開發期 60%／確認後 90% 僅為候選目標、**尚未測得／待核定**，不得借用單一 N2 測試推論跨域成功 |
+
+所有 Cases **NOT_RUN**。這裡的**8 slots**依既有 Business v1.2 / System v1.7 是每個 Intent 最多 8 種**已核准、有效、可參與匹配的 Parameter Concepts**；8 個展示面向**不等於**固定 8 個必填欄位、8 題 AI 問題或 8 種一律要公開的屬性。見 [Action Intelligence Architecture v1 Draft](../design/ACTION_INTELLIGENCE_ARCHITECTURE_v1_DRAFT.md)。
+
 ## 1. Done 的唯一判準
 
 每個 B-ID 須同時具備：
