@@ -917,7 +917,9 @@ impl LocalStore {
         conn.query_row(
             "SELECT s.asset_id,s.status,s.evidence_quote,s.content_hint,s.uncertainty,
                     s.model_id,s.runtime,s.backend,s.elapsed_ms,s.updated_at_ms,
-                    i.candidate_json,q.ordinal,q.question
+                    i.candidate_json,
+                    CASE WHEN i.candidate_json IS NULL THEN q.ordinal ELSE NULL END,
+                    CASE WHEN i.candidate_json IS NULL THEN q.question ELSE NULL END
              FROM local_model_suggestions s
              LEFT JOIN local_intent_candidates i ON i.asset_id=s.asset_id
                AND i.source_sha256=s.source_sha256
@@ -933,11 +935,13 @@ impl LocalStore {
                     asset_id: row.get(0)?, status: row.get(1)?,
                     evidence_quote: row.get(2)?, content_hint: row.get(3)?,
                     uncertainty: row.get(4)?, intent_candidate: candidate,
-                    pending_question: row.get::<_,Option<i64>>(11)?.map(|ordinal|
-                        PendingIntentQuestion {
+                    pending_question: match row.get::<_,Option<i64>>(11)? {
+                        Some(ordinal) => Some(PendingIntentQuestion {
                             ordinal,
-                            text: row.get::<_,String>(12).unwrap_or_default(),
+                            text: row.get(12)?,
                         }),
+                        None => None,
+                    },
                     model_id: row.get(5)?, runtime: row.get(6)?, backend: row.get(7)?,
                     elapsed_ms: row.get::<_, i64>(8)?.max(0) as u64,
                     updated_at_ms: row.get(9)?,
