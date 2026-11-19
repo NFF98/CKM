@@ -1451,4 +1451,66 @@ mod tests {
         assert_eq!(store.model_input_for_asset("../../secret").unwrap_err(), "INVALID_ASSET_ID");
     }
 
+    #[test]
+    fn us01b_ocr_and_text_share_the_private_intent_goal_pipeline() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(png_drop(&tiny_png())).unwrap();
+        let original="我想找人一起練 JLPT N2 口說";
+        assert_eq!(store.model_input_for_asset(&image.id).unwrap_err(),"MODEL_INPUT_UNKNOWN");
+        store.save_recognition(&image.id,recognized_ocr(original)).unwrap();
+        assert_eq!(store.model_input_for_asset(&image.id).unwrap(),original);
+        let result=store.save_model_suggestion(&image.id,original,
+            model_reply(r#"{"contentHint":"日文口說",
+                "intentCandidate":{"domain":"study","goalText":"找 N2 口說學伴",
+                "evidenceQuote":"我想找人一起練"}}"#)).unwrap();
+        assert_eq!(result.intent_candidate.unwrap().domain,"study");
+        let goals=crate::goal_draft::GoalStore::open(dir.path()).unwrap();
+        assert!(goals.load(&image.id).unwrap().is_none());
+        let confirmed=goals.confirm(crate::goal_draft::ConfirmGoalInput {
+            asset_id:image.id.clone(), goal_text:"本人確認 N2 口說".into(),
+            confirmation_action:"confirm_goal".into(),expected_revision:0,
+        }).unwrap();
+        assert_eq!(confirmed.intent_state,"draft_private");
+        assert!(!confirmed.share_consent);
+        assert_eq!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&image.id).unwrap().unwrap().goal_text,"本人確認 N2 口說");
+    }
+
+    #[test]
+    fn us01b_ocr_source_correction_invalidates_candidate_and_rejects_old_result() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(png_drop(&tiny_png())).unwrap();
+        let first="我想找人一起練 JLPT N2 口說";
+        store.save_recognition(&image.id,recognized_ocr(first)).unwrap();
+        store.save_model_suggestion(&image.id,first,
+            model_reply(r#"{"contentHint":"N2","intentCandidate":{"domain":"study",
+                "goalText":"找學伴","evidenceQuote":"我想找人"}}"#)).unwrap();
+        store.correct_ocr(&image.id,"時裝版型設計參考 パクる").unwrap();
+        assert_eq!(store.model_input_for_asset(&image.id).unwrap(),"時裝版型設計參考 パクる");
+        assert!(store.load_model_suggestion(&image.id).unwrap().is_none());
+        assert_eq!(store.save_model_suggestion(&image.id,first,
+            model_reply(r#"{"contentHint":"過期"}"#)).unwrap_err(),"MODEL_STALE_INPUT");
+        let next=store.save_model_suggestion(&image.id,"時裝版型設計參考 パクる",
+            model_reply(r#"{"contentHint":"服裝設計語境",
+                "intentCandidate":{"domain":"study","goalText":"找學伴",
+                "evidenceQuote":"パクる"}}"#)).unwrap();
+        assert!(next.intent_candidate.is_none(),"context without user wish cannot become Goal");
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&image.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn us01b_image_without_ocr_remains_unknown_and_private() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(png_drop(&tiny_png())).unwrap();
+        store.save_recognition(&image.id,recognized_ocr("")).unwrap();
+        assert_eq!(store.model_input_for_asset(&image.id).unwrap_err(),"MODEL_INPUT_UNKNOWN");
+        assert!(store.load_ocr(&image.id).unwrap().raw_text.unwrap().is_empty());
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&image.id).unwrap().is_none());
+    }
+
 }
