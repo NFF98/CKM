@@ -137,7 +137,7 @@
 
 ## 五、如何管理 Backlog
 
-- **先有 Backlog，後分 Sprint**：使用者現已確認 [Sprint 1＝B01–B09](sprints/SPRINT-01_LOCAL_AI.md)、[Sprint 2＝B10–B18](sprints/SPRINT-02_MATCHING.md)、[Sprint 3＝B19–B21](sprints/SPRINT-03_RELEASE.md)。舊版兩個 Sprint 文件曾撤回，與目前三 Sprint 不同。
+- **先選 User Story，再映射 BXX**：現有三個 Sprint 保留，但 [Sprint 1 交付 US-01](sprints/SPRINT-01_LOCAL_AI.md)（跨 B01–B09）、[Sprint 2 交付 US-02＋US-03](sprints/SPRINT-02_MATCHING.md)（跨 B08/B10–B18）、[Sprint 3 做完整回歸與發布](sprints/SPRINT-03_RELEASE.md)。以真使用者流程 PASS 交付，不能用單個 BXX CI PASS 取代。
 - 每項工作完成時須附上可重現的驗收證據：測試結果、Commit／PR、使用合成資料的畫面或裝置實測。
 - 尚未動工的項目一律標示「未開始」；不得將資料夾或待辦清單存在，當成 App 已實作。
 - 使用者已決定採三個 Sprint。這是開發分組，不代表承諾工期或新增 Sprint Activation／治理硬限制。
