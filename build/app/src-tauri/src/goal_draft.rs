@@ -362,6 +362,11 @@ impl GoalStore {
     /// No image, raw OCR, notes or user answer is ever exported by this method.
     pub fn share_preview(&self, asset_id: &str) -> Result<PrivateSharePreview,String> {
         let goal=self.load(asset_id)?.ok_or_else(||err("GOAL_CONFIRMATION_REQUIRED"))?;
+        // Existing B05/B06 schema owns the preview's valid Concept projection.
+        // Never create a separate, unvalidated list for sharing.
+        super::parameter_registry::ParameterStore::open(
+            self.db_path.parent().ok_or_else(||err("STORAGE_UNAVAILABLE"))?
+        )?;
         let conn=self.connect()?;
         let possible=if goal.lifecycle_state=="active_private" {
             let mut stmt=conn.prepare(
