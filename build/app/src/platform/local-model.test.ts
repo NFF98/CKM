@@ -23,6 +23,7 @@ const proposal = {
   contentHint: "日語詞彙",
   uncertainty: null,
   intentCandidate: null,
+  intentCandidates: [],
   pendingQuestion: null,
   modelId: "gemma-4-E2B-it",
   runtime: "litert-lm-android-0.16.1",
@@ -115,12 +116,29 @@ describe("B03 本地 Gemma 4 E2B Model Contract", () => {
       intentCandidate: {
         domain: "study", goalText: "我想找人一起練 JLPT N2 口說",
         evidenceQuote: "我想找人一起練"
-      }
+      },
+      intentCandidates: [{
+        domain: "study", goalText: "我想找人一起練 JLPT N2 口說",
+        evidenceQuote: "我想找人一起練"
+      }]
     };
     const invoke = vi.fn().mockResolvedValue(candidate);
     expect((await proposeModel(invoke, id)).intentCandidate).toEqual(candidate.intentCandidate);
     expect(invoke).toHaveBeenCalledWith("local_model_propose", { id });
     expect(candidate.status).toBe("suggested_private");
+  });
+
+  it("US-01: 最多三個有來源的私人候選，選擇後仍需本人確認", () => {
+    const first={domain:"study",goalText:"一起練 N2 口說",evidenceQuote:"一起練"};
+    const second={domain:"study",goalText:"找人分享 N2 學習心得",evidenceQuote:"找人"};
+    const multi={...proposal,intentCandidate:first,intentCandidates:[first,second]};
+    expect(parseModelSuggestion(multi).intentCandidates).toHaveLength(2);
+    for(const invalid of [
+      {...multi,intentCandidates:[first,second,first,second]},
+      {...multi,intentCandidate:second},
+      {...proposal,intentCandidates:[first],intentCandidate:null},
+      {...multi,intentCandidates:[first,{...second,confirmed:true}]},
+    ]) expect(()=>parseModelSuggestion(invalid)).toThrow("Contract");
   });
 
   it("US-01A: 拒絕模型偽造 Goal 確認與不合法候選欄位", () => {
