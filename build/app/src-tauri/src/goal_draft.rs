@@ -26,6 +26,30 @@ pub struct ConfirmGoalInput {
     pub expected_revision: i64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LifecycleUpdateInput {
+    pub asset_id: String,
+    pub expected_revision: i64,
+    pub expected_lifecycle_version: i64,
+    pub action: String,
+    pub expires_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateSharePreview {
+    pub draft_id: String,
+    pub goal_text: String,
+    pub lifecycle_state: String,
+    pub possible_concept_ids: Vec<String>,
+    pub visibility: String,
+    pub consent_recorded: bool,
+    pub can_upload: bool,
+    pub approval_status: String,
+    pub excluded_private_sources: Vec<&'static str>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivateGoalDraft {
@@ -41,6 +65,9 @@ pub struct PrivateGoalDraft {
     pub publishable: bool,
     pub confirmed_event_id: String,
     pub source_sha256: String,
+    pub lifecycle_state: String,
+    pub expires_at_ms: Option<i64>,
+    pub lifecycle_version: i64,
     pub revision: i64,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
@@ -104,7 +131,24 @@ impl GoalStore {
                 UNIQUE(draft_id, revision)
              );
              CREATE INDEX IF NOT EXISTS idx_goal_drafts_recent
-                ON local_goal_drafts(updated_at_ms DESC);",
+                ON local_goal_drafts(updated_at_ms DESC);
+             CREATE TABLE IF NOT EXISTS local_goal_lifecycle (
+                draft_id TEXT PRIMARY KEY NOT NULL
+                    REFERENCES local_goal_drafts(id) ON DELETE CASCADE,
+                state TEXT NOT NULL CHECK(state IN ('active_private','cancelled_private')),
+                expires_at_ms INTEGER CHECK(expires_at_ms IS NULL OR expires_at_ms>0),
+                version INTEGER NOT NULL CHECK(version>=1),
+                updated_at_ms INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS local_goal_lifecycle_events (
+                id TEXT PRIMARY KEY NOT NULL,
+                draft_id TEXT NOT NULL REFERENCES local_goal_drafts(id) ON DELETE CASCADE,
+                version INTEGER NOT NULL CHECK(version>=1),
+                action TEXT NOT NULL CHECK(action IN ('set_expiry','cancel_goal')),
+                source TEXT NOT NULL CHECK(source='user_explicit'),
+                at_ms INTEGER NOT NULL,
+                UNIQUE(draft_id,version)
+             );",
         ).map_err(|_| err("DATABASE_MIGRATION_FAILED"))?;
         Ok(store)
     }
@@ -130,9 +174,13 @@ impl GoalStore {
             return Err(err("ASSET_NOT_FOUND"));
         }
         conn.query_row(
-            "SELECT id,asset_id,goal_text,goal_state,intent_state,visibility,
-                share_consent,confirmed_event_id,source_sha256,revision,created_at_ms,updated_at_ms
-             FROM local_goal_drafts WHERE asset_id=?1",
+            "SELECT g.id,g.asset_id,g.goal_text,g.goal_state,g.intent_state,g.visibility,
+                g.share_consent,g.confirmed_event_id,g.source_sha256,g.revision,g.created_at_ms,
+                g.updated_at_ms,coalesce(l.state,'active_private'),l.expires_at_ms,
+                coalesce(l.version,0)
+             FROM local_goal_drafts g
+             LEFT JOIN local_goal_lifecycle l ON l.draft_id=g.id
+             WHERE g.asset_id=?1",
             params![id],
             |row| Ok(PrivateGoalDraft {
                 id: row.get(0)?,
@@ -145,6 +193,19 @@ impl GoalStore {
                 publishable: false,
                 confirmed_event_id: row.get(7)?,
                 source_sha256: row.get(8)?,
+                lifecycle_state: {
+                    let state: String = row.get(12)?;
+                    let expiry: Option<i64> = row.get(13)?;
+                    if state == "cancelled_private" {
+                        "cancelled_private".to_owned()
+                    } else if expiry.is_some_and(|value| value <= now_ms().unwrap_or(i64::MAX)) {
+                        "expired_private".to_owned()
+                    } else {
+                        "active_private".to_owned()
+                    }
+                },
+                expires_at_ms: row.get(13)?,
+                lifecycle_version: row.get(14)?,
                 revision: row.get(9)?,
                 created_at_ms: row.get(10)?,
                 updated_at_ms: row.get(11)?,
@@ -183,6 +244,13 @@ impl GoalStore {
 
         let (draft_id, revision) = match old {
             Some((id, current_revision, _created_at)) => {
+                let lifecycle: Option<(String,Option<i64>)> = tx.query_row(
+                    "SELECT state,expires_at_ms FROM local_goal_lifecycle WHERE draft_id=?1",
+                    params![id],|r|Ok((r.get(0)?,r.get(1)?)),
+                ).optional().map_err(|_| err("DATABASE_READ_FAILED"))?;
+                if lifecycle.as_ref().is_some_and(|(state,expiry)|
+                    state=="cancelled_private" || expiry.is_some_and(|ms|ms<=now_ms().unwrap_or(i64::MAX)))
+                { return Err(err("LIFECYCLE_INACTIVE")); }
                 if input.expected_revision != current_revision {
                     return Err(err("GOAL_REVISION_CONFLICT"));
                 }
@@ -226,6 +294,101 @@ impl GoalStore {
         tx.commit().map_err(|_| err("DATABASE_WRITE_FAILED"))?;
         self.load(&asset_id)?.ok_or_else(|| err("DATABASE_READ_FAILED"))
     }
+    /// B07: only the person can set an explicit future deadline or cancel.
+    /// Cancellation never grants Cloud consent and cannot be undone by editing Goal.
+    pub fn update_lifecycle(&self, input: LifecycleUpdateInput)
+        -> Result<PrivateGoalDraft, String>
+    {
+        let asset_id=valid_id(&input.asset_id)?;
+        if input.expected_revision<1 || input.expected_lifecycle_version<0 {
+            return Err(err("GOAL_REVISION_CONFLICT"));
+        }
+        let now=now_ms()?;
+        match input.action.as_str() {
+            "set_expiry" if input.expires_at_ms.is_some_and(|ms|ms>now) => {},
+            "cancel_goal" if input.expires_at_ms.is_none() => {},
+            _ => return Err(err("LIFECYCLE_INVALID_ACTION")),
+        }
+        let mut conn=self.connect()?;
+        let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| err("DATABASE_BUSY"))?;
+        let draft: Option<(String,i64)> = tx.query_row(
+            "SELECT id,revision FROM local_goal_drafts WHERE asset_id=?1 AND
+             intent_state='draft_private' AND visibility='private' AND share_consent=0",
+            params![asset_id],|r|Ok((r.get(0)?,r.get(1)?))
+        ).optional().map_err(|_| err("DATABASE_READ_FAILED"))?;
+        let (draft_id,revision)=draft.ok_or_else(||err("GOAL_CONFIRMATION_REQUIRED"))?;
+        if revision!=input.expected_revision {return Err(err("GOAL_REVISION_CONFLICT"));}
+        let prior: Option<(String,Option<i64>,i64)> = tx.query_row(
+            "SELECT state,expires_at_ms,version FROM local_goal_lifecycle WHERE draft_id=?1",
+            params![draft_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))
+        ).optional().map_err(|_|err("DATABASE_READ_FAILED"))?;
+        let version=prior.as_ref().map(|(_,_,v)|*v).unwrap_or(0);
+        if version!=input.expected_lifecycle_version {
+            return Err(err("LIFECYCLE_VERSION_CONFLICT"));
+        }
+        if prior.as_ref().is_some_and(|(state,expiry,_)|
+            state=="cancelled_private" || expiry.is_some_and(|ms|ms<=now)) {
+            return Err(err("LIFECYCLE_INACTIVE"));
+        }
+        let next_version=version+1;
+        let state=if input.action=="cancel_goal" {"cancelled_private"} else {"active_private"};
+        let expiry=if input.action=="cancel_goal" {None} else {input.expires_at_ms};
+        if version==0 {
+            tx.execute(
+                "INSERT INTO local_goal_lifecycle
+                    (draft_id,state,expires_at_ms,version,updated_at_ms)
+                 VALUES (?1,?2,?3,1,?4)",
+                params![draft_id,state,expiry,now],
+            ).map_err(|_|err("DATABASE_WRITE_FAILED"))?;
+        } else {
+            tx.execute(
+                "UPDATE local_goal_lifecycle SET state=?1,expires_at_ms=?2,
+                   version=?3,updated_at_ms=?4 WHERE draft_id=?5 AND version=?6",
+                params![state,expiry,next_version,now,draft_id,version],
+            ).map_err(|_|err("DATABASE_WRITE_FAILED"))?;
+        }
+        tx.execute(
+            "INSERT INTO local_goal_lifecycle_events
+              (id,draft_id,version,action,source,at_ms)
+             VALUES (?1,?2,?3,?4,'user_explicit',?5)",
+            params![Uuid::new_v4().to_string(),draft_id,next_version,input.action,now],
+        ).map_err(|_|err("DATABASE_WRITE_FAILED"))?;
+        tx.commit().map_err(|_|err("DATABASE_WRITE_FAILED"))?;
+        self.load(&asset_id)?.ok_or_else(||err("DATABASE_READ_FAILED"))
+    }
+
+    /// B08: a LOCAL-ONLY preview; no approved cloud payload or Consent handler.
+    /// No image, raw OCR, notes or user answer is ever exported by this method.
+    pub fn share_preview(&self, asset_id: &str) -> Result<PrivateSharePreview,String> {
+        let goal=self.load(asset_id)?.ok_or_else(||err("GOAL_CONFIRMATION_REQUIRED"))?;
+        let conn=self.connect()?;
+        let possible=if goal.lifecycle_state=="active_private" {
+            let mut stmt=conn.prepare(
+                "SELECT s.concept_id FROM local_matching_slots s
+                 JOIN local_parameter_drafts p ON p.id=s.parameter_id
+                 WHERE s.draft_id=?1 AND s.goal_revision=?2
+                   AND p.state='CONFIRMED' AND p.visibility='private'
+                   AND p.share_consent=0 AND p.goal_revision=?2 AND
+                   (p.expires_at_ms IS NULL OR p.expires_at_ms>?3)
+                 ORDER BY s.slot_index",
+            ).map_err(|_|err("DATABASE_READ_FAILED"))?;
+            let iter=stmt.query_map(params![goal.id,goal.revision,now_ms()?],
+                |row|row.get::<_,String>(0)).map_err(|_|err("DATABASE_READ_FAILED"))?;
+            iter.collect::<rusqlite::Result<Vec<String>>>()
+                .map_err(|_|err("DATABASE_READ_FAILED"))?
+        } else { Vec::new() };
+        Ok(PrivateSharePreview {
+            draft_id:goal.id,goal_text:goal.goal_text,
+            lifecycle_state:goal.lifecycle_state,
+            possible_concept_ids:possible,visibility:"private".into(),
+            consent_recorded:false,can_upload:false,
+            approval_status:"T01_AND_CONSENT_PENDING".into(),
+            excluded_private_sources:vec!["original_image","raw_ocr",
+                "corrected_ocr","private_notes","clarification_answers"],
+        })
+    }
+
 }
 
 #[cfg(test)]
