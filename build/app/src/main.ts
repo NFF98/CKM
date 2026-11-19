@@ -275,6 +275,8 @@ const errors: Record<string, string> = {
   PARAMETER_CONFIRMATION_REQUIRED: "沒有收到本人明確確認，未改變參數狀態。",
   PARAMETER_UNAPPROVED_CONCEPT: "這是未知或未批准的私人條件，不能確認成正式配對概念。",
   PARAMETER_NOT_FOUND: "找不到條件或已從這份私人草稿移除。",
+  B06_SLOT_BUDGET_EXCEEDED: "這個 Intent 的八個有效配對概念位置已滿。請先自行決定要保留哪些條件；系統不會默默刪除。",
+  B06_SLOT_ADMISSION_REJECTED: "本地資料庫拒絕這個配對概念；請確認來源、本人確認及有效期限。",
   DATABASE_MIGRATION_FAILED: "本機參數資料庫初始化失敗，請不要重試公開分享。",
 
 };
@@ -681,7 +683,7 @@ async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Pr
   panel.className = "parameter-panel";
   panel.setAttribute("aria-label", "私人配對條件與參數 Registry");
   const heading = document.createElement("h3");
-  heading.textContent = "私人條件（B05）";
+  heading.textContent = "私人條件（B05 Registry／B06 最多 8 slots）";
   const guidance = document.createElement("p");
   guidance.className = "fineprint";
   guidance.textContent = "目前只有 N2／JLPT N2／日語二級是已知的同一種概念。其他輸入只會成為 UNKNOWN 私人候選，不會被當作正式配對條件。";
@@ -750,8 +752,11 @@ async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Pr
       rows = await listParameters(rust, goal.id);
       if (!active()) return;
       list.replaceChildren();
+      const used = rows.filter(item => item.matchSlotIndex !== null && !item.stale).length;
+      status.textContent = used + "/8 個已確認的本地私人配對概念（不是八個必填問題）。" +
+        " 仍無 Cloud 分享授權；T-01 完整白名單尚未核准。";
       if (!rows.length) {
-        status.textContent = "尚無任何私人配對條件。單純收藏、OCR 或模型建議不會自動新增條件。";
+        status.textContent += " 尚無任何私人條件；單純收藏／OCR／模型不會自動新增。";
       }
       for (const item of rows) {
         const li = document.createElement("li");
@@ -767,7 +772,9 @@ async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Pr
           : "只限此私人草稿";
         summary.textContent = "來源：本人輸入 · 狀態：" + item.state +
           " · v" + item.version + " · " + expiryText +
-          (item.stale ? " · Goal 已修改，此候選需重新保存" : "");
+          (item.stale ? " · Goal 已修改，此候選需重新保存" : "") +
+          (item.matchSlotIndex === null ? "" :
+            " · B06 私人 Slot " + (item.matchSlotIndex + 1) + "/8（未對外分享）");
         li.append(name, summary);
         if (item.state === "OBSERVED" && item.conceptId && !item.stale) {
           const button = document.createElement("button");
@@ -893,7 +900,7 @@ async function renderGoalPanel(assetId: string): Promise<void> {
   choices.append(keep, confirm);
   const disclaimer = document.createElement("p");
   disclaimer.className = "fineprint";
-  disclaimer.textContent = "確認只會產生私人 Goal 與本人確認事件。B05／B06 的合法配對條件及 8-slot、B08 分享授權仍是獨立步驟；目前不會發布。";
+  disclaimer.textContent = "確認只會產生私人 Goal 與本人事件；B05／B06 另外驗證並限制最多 8 種本地概念。B08 分享授權尚未開放，絕不會自動發布。";
   panel.append(heading, explanation, state, field, choices, disclaimer);
   preview.append(panel);
 
