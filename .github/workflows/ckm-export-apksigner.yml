@@ -1,0 +1,30 @@
+name: CKM Android SDK signing tools export (no keys)
+on:
+  pull_request:
+    types: [labeled]
+permissions:
+  contents: read
+
+jobs:
+  signer:
+    name: Export SDK 35 apksigner Java JAR (public tool only)
+    if: github.event.label.name == 'apk-signing-tools'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android Build Tools 35
+        run: sdkmanager --install 'build-tools;35.0.0'
+      - name: Export Android signing CLI
+        run: |
+          mkdir -p /tmp/ckm-apksigner
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" /tmp/ckm-apksigner/
+          java -jar /tmp/ckm-apksigner/apksigner.jar --version
+          sha256sum /tmp/ckm-apksigner/apksigner.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ckm-android-apksigner-sdk35-public-tool
+          path: /tmp/ckm-apksigner/apksigner.jar
+          if-no-files-found: error
