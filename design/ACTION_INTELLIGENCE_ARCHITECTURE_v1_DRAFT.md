@@ -113,6 +113,55 @@ Cloud 可有共用 `PublishedIntent` 投影，如 `domain_id`、`goal_kind`、`n
 - **Outcome 驗證回饋**：由 Cloud B18 提供可信、授權可見的合作結果回本地；本地只更新「哪些建議被接受／更改／完成」，不能把單次成功當普遍規律。跨使用者的 Outcome 聚合須另經同意與資料治理決策。
 - **可測試的選擇邏輯（初版）**：對每個候選先以 Rust 硬規則排除「證據不足／能力不存在／需授權但未同意／資料已失效」，再根據本地**已確認**歷史、內容線索與 Unknown 進行可追溯排序；不必一開始訓練私有權重。當不確定性影響選擇時退回提問或只收藏。
 
+### 1A.6b 純文字入口／8-slot／60～90% 品質目標（2026-11-19 User correction）
+
+**文字不是圖片的備援，而是 B02→B03 的第一級入口**。純文字直接進 B02 App-private SQLite 的 `text_content`，經 B03 TextAdapter 給 Gemma；不需要也不應呼叫 OCR。圖片可以 OCR 成文字後走**同一套意圖判斷**；未來真正 Vision 輸入要附來源模態與不同的 Evidence，不可把文字推論冒充視覺。
+
+```text
+Text Drop ────────────→ B02 source=text / SQLite ────┐
+Image Drop → OCR/人工修正 → B02/B03 Evidence ────────┤
+                                                     ▼
+                           B03 通用 Domain + Goal / Need / Offer 候選（可 UNKNOWN）
+                                                     ▼
+                           B04 本人檢視／修改／確認真正 Goal
+                                                     ▼
+                           B05 Concept Registry 驗證候選與來源；必要時 B09 最多 3 題
+                                                     ▼
+                           B06 每個已確認 Intent 最多 8 種活躍 Matching Concepts
+                                                     ▼
+                           B08 授權→B12 同步→B13–B18 Cloud Match+Outcome
+```
+
+**精確區別：**
+- **8-slot = 上限，不是固定 8 個問題／固定 8 欄，也不是 8 個自由文字標籤。** 每個 Intent 最多 8 種**已批准、仍有效且可參與 Matching** 的 Concept；第 9 個不得自動覆蓋既有硬條件。正式屬性名稱、白名單、typed 值、適用領域由 B05 T-01 決策控制。
+- **B04 Goal、領域標籤、原始來源證據，與 B06 的「有效 Matching Concepts」不可只因都顯示在畫面就混算。** 若將 `goal` 映射為獨立 Matching Concept，需有明確 Registry 規格；否則 Goal 仍以 B04 Goal 欄位管理。不要偷偷改寫 B06 slot 計數。
+- **一個問題可以確認多個候選概念**：例如使用者確認「想找 JLPT N2 學伴練日語口語」可以在證據充分、Concept 已核准、本人逐項確認的前提下，確立多個相關 Concept；不代表需要四題，也不代表每個資料都一定要占 slot。
+- **B09 每次 Intent 啟用／匹配嘗試 AI 最多主動問 3 題，含 Goal 確認**（不是 8 題）；缺少非必要欄位保留 UNKNOWN，遇到不可缺的硬條件而不知時**暫不匹配**，不可瞎補。
+- **區分「推測得到」與「本人確認」**：Gemma 只能產生 `INFERRED/UNKNOWN` 私人候選；B04/B05 使用者明確選擇後，Rust 寫入可追溯 event／版本；B08 另取得 Cloud Consent。這是使用者正確意圖及隱私的唯一安全路徑，不能用模型 confidence 代替。
+
+**跨領域 8 個候選資訊面向（示例，不是 T-01 Approved Registry，也不是必須全填）：**
+
+| 候選面向（非正式名稱） | 若使用者純文字輸入「想找人一起研究 BMW E46 改裝，週末有空」 | 核實及注意 |
+|---|---|---|
+| 1. Domain / 領域 | Car | 主題線索，**不自動算一個 B06 slot** |
+| 2. Goal / 目的 | 共同研究／討論改裝 | B04 Goal 需本人確認，不是模型已確認 |
+| 3. Subject / 主題 | BMW E46 | 只屬內容事實；是否為 Match Concept 待 Domain Pack |
+| 4. Need / 需要 | 同好／改裝討論夥伴（提議） | 不可因「研究」推定必須找技師 |
+| 5. Offer / 可提供 | UNKNOWN | 本人可補，AI 不可編造技能 |
+| 6. Availability / 時間 | 週末（尚不知具體日期／時區） | 不可默認每週或精確時間 |
+| 7. Mode / Location / 合作方式 | UNKNOWN | 文字沒有說所在地，不能讀 GPS 來補或假設線下 |
+| 8. Skill / Hard Constraint / 必要條件 | UNKNOWN | 不可編造技能／資格／預算等硬限制 |
+
+此表是**候選分析視角**，與 **B06 8 個有效 Matching Concept 容量**不是同一組定死的欄位清單。Fashion/Car 只是跨域理解測試，P1 不可發布其 Cloud Intent。
+
+**純文字反例：** `パクる` 沒有上下文 → 能解釋詞彙，但 `domain=UNKNOWN`、`goal=UNKNOWN`，不應填滿 8 格或默認 Study；可以只收藏或問「你想用這段內容做什麼？」。`我想找人一起練 N2 口說` → 有 Goal 與 Study 線索，可直接給使用者檢視確認，不需每次問滿三題。
+
+**60～90% 不可以由 E2B 自報「信心 85%」直接當成準確率。** 本設計將使用者說的 60～90% 解釋為**待驗證的目標範圍（非已達成 KPI，也非單筆必達的機率）**。需要區分兩個指標：
+1. `Intent top-1 accuracy@pre-confirmation`：對有明確 Goal 的獨立標註純文字／OCR 樣本，模型第一候選是否與標註者一致；對無法判定輸入另計 `UNKNOWN` 正確拒判率，不能灌水算準確。**可暫定 ≥60% 為開發早期檢查門檻，待 User 決策。**
+2. `Confirmed-intent agreement`：經不超過 3 個真正必要問題、可修改候選、本人最終確認後，系統儲存 Goal／必要條件是否與使用者當次完整表述一致；**可暫定 ≥90% 為驗收目標，待實測及 User 決策**。同時量測誤確認、發佈錯誤、問題數、中途放棄與 8-slot 完整性。不能只把「按了確認」當成獨立的正確率證據；以保留測試集和實際用戶理解度複核。
+   
+測試必須**分別計算 text-only、OCR-from-image、含真實視覺輸入三種模態**，並在 Study、Fashion、Car、Mixed、UNKNOWN 樣本中分層；不能用 P1 Study 的成績宣稱跨域 90%。AI 的原始排名不確定／未校準時要明示 `UNKNOWN`；Rust 根據合法性與來源證據 Gate 決定能否提出候選、是否需追問／暫不配對，不能以任意 Magic Threshold 自動發布。
+
 ### 1A.7 Cloud 不只有「找同類」：通用可行性 Matching
 
 使用者的 Domain 只說明內容屬於哪個領域；**能不能配對**需要另外根據**本人同意公開的** Goal、Need、Offer、執行條件判斷：
