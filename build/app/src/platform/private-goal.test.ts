@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { confirmPrivateGoal, loadPrivateGoalDraft, parsePrivateGoalDraft } from "./private-goal";
+import {
+  confirmPrivateGoal, loadPrivateGoalDraft, parsePrivateGoalDraft,
+  updatePrivateGoalLifecycle, previewPrivateGoalShare
+} from "./private-goal";
 
 const assetId = "2bc595b3-a0e4-4254-bc8f-200b1b0f19a2";
 const draftId = "f126cb5c-dc54-4666-b460-3b2e7b41ca13";
@@ -9,6 +12,7 @@ const draft = {
   goalState: "confirmed_by_user", intentState: "draft_private",
   visibility: "private", shareConsent: false, publishable: false,
   confirmedEventId: eventId, sourceSha256: "a".repeat(64),
+  lifecycleState: "active_private", expiresAtMs: null, lifecycleVersion: 0,
   revision: 1, createdAtMs: 1794890000000, updatedAtMs: 1794890000000,
 };
 
@@ -76,6 +80,57 @@ describe("S1-AC04/B04：Content 和 Goal 分離", () => {
     expect(loaded?.shareConsent).toBe(false);
     expect(loaded?.publishable).toBe(false);
     expect(loaded?.confirmedEventId).toBe(eventId);
+  });
+
+  it("US-01D: 私人有效期必須是本人輸入的未來具體時間", async () => {
+    const expiry=Date.now()+86_400_000;
+    const expected={...draft,expiresAtMs:expiry,lifecycleVersion:1};
+    const invoke=vi.fn().mockResolvedValue(expected);
+    const received=await updatePrivateGoalLifecycle(invoke,assetId,1,0,"set_expiry",expiry);
+    expect(received.expiresAtMs).toBe(expiry);
+    expect(received.shareConsent).toBe(false);
+    expect(invoke).toHaveBeenCalledWith("update_private_goal_lifecycle",{
+      input:{assetId,expectedRevision:1,expectedLifecycleVersion:0,
+        action:"set_expiry",expiresAtMs:expiry}
+    });
+    await expect(updatePrivateGoalLifecycle(invoke,assetId,1,0,"set_expiry",null))
+      .rejects.toThrow("LIFECYCLE_INVALID_ACTION");
+    await expect(updatePrivateGoalLifecycle(invoke,assetId,1,0,"cancel_goal",expiry))
+      .rejects.toThrow("LIFECYCLE_INVALID_ACTION");
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("US-01D: 本人撤銷不會產生 Consent 或復活私人 Intent", async () => {
+    const cancelled={...draft,lifecycleState:"cancelled_private",lifecycleVersion:1};
+    const invoke=vi.fn().mockResolvedValue(cancelled);
+    const received=await updatePrivateGoalLifecycle(invoke,assetId,1,0,"cancel_goal",null);
+    expect(received.lifecycleState).toBe("cancelled_private");
+    expect(received.publishable).toBe(false);
+    expect(invoke).toHaveBeenCalledWith("update_private_goal_lifecycle",{
+      input:{assetId,expectedRevision:1,expectedLifecycleVersion:0,
+        action:"cancel_goal",expiresAtMs:null}
+    });
+  });
+
+  it("US-01D: share preview 僅本地讀取，永遠不可上傳或冒充已同意", async () => {
+    const payload={
+      draftId,goalText:draft.goalText,lifecycleState:"active_private",
+      possibleConceptIds:["study.jlpt_level"],visibility:"private",
+      consentRecorded:false,canUpload:false,approvalStatus:"T01_AND_CONSENT_PENDING",
+      excludedPrivateSources:["original_image","raw_ocr","clarification_answers"]
+    };
+    const invoke=vi.fn().mockResolvedValue(payload);
+    const preview=await previewPrivateGoalShare(invoke,assetId);
+    expect(preview.canUpload).toBe(false);
+    expect(invoke).toHaveBeenCalledWith("preview_private_goal_share",{assetId});
+    expect(invoke).toHaveBeenCalledTimes(1);
+    for(const bad of [
+      {...payload,canUpload:true},
+      {...payload,consentRecorded:true},
+      {...payload,possibleConceptIds:["N2",123]},
+      {...payload,visibility:"public"},
+    ]) expect(()=>previewPrivateGoalShare(vi.fn().mockResolvedValue(bad),assetId))
+      .rejects.toThrow("Contract");
   });
 
   it("原生儲存失敗不能假回覆確認成功", async () => {
