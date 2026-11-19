@@ -12,6 +12,9 @@ export interface PrivateGoalDraft {
   publishable: false;
   confirmedEventId: string;
   sourceSha256: string;
+  lifecycleState: "active_private" | "cancelled_private" | "expired_private";
+  expiresAtMs: number | null;
+  lifecycleVersion: number;
   revision: number;
   createdAtMs: number;
   updatedAtMs: number;
@@ -40,6 +43,10 @@ export function parsePrivateGoalDraft(value: unknown): PrivateGoalDraft {
     v.publishable !== false ||
     typeof v.confirmedEventId !== "string" || !uuid.test(v.confirmedEventId) ||
     typeof v.sourceSha256 !== "string" || !sha256.test(v.sourceSha256) ||
+    !["active_private", "cancelled_private", "expired_private"].includes(String(v.lifecycleState)) ||
+    (v.expiresAtMs !== null && (!Number.isSafeInteger(v.expiresAtMs) || Number(v.expiresAtMs) <= 0)) ||
+    !Number.isSafeInteger(v.lifecycleVersion) || Number(v.lifecycleVersion) < 0 ||
+    (v.lifecycleState === "expired_private" && v.expiresAtMs === null) ||
     !Number.isSafeInteger(v.revision) || Number(v.revision) < 1 ||
     !Number.isSafeInteger(v.createdAtMs) ||
     !Number.isSafeInteger(v.updatedAtMs)
@@ -84,4 +91,67 @@ export async function confirmPrivateGoal(
       expectedRevision,
     },
   }));
+}
+
+/** The person may set a real future deadline or cancel a local Intent. No cloud calls. */
+export async function updatePrivateGoalLifecycle(
+  invoke: InvokeAdapter,
+  assetId: string,
+  expectedRevision: number,
+  expectedLifecycleVersion: number,
+  action: "set_expiry" | "cancel_goal",
+  expiresAtMs: number | null
+): Promise<PrivateGoalDraft> {
+  validateAssetId(assetId);
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1 ||
+      !Number.isSafeInteger(expectedLifecycleVersion) || expectedLifecycleVersion < 0) {
+    throw new Error("GOAL_REVISION_CONFLICT");
+  }
+  if ((action === "set_expiry" && (expiresAtMs === null ||
+       !Number.isSafeInteger(expiresAtMs) || expiresAtMs <= Date.now())) ||
+      (action === "cancel_goal" && expiresAtMs !== null)) {
+    throw new Error("LIFECYCLE_INVALID_ACTION");
+  }
+  return parsePrivateGoalDraft(await invoke("update_private_goal_lifecycle", {
+    input: {
+      assetId, expectedRevision, expectedLifecycleVersion, action, expiresAtMs,
+    },
+  }));
+}
+
+export interface PrivateSharePreview {
+  draftId: string;
+  goalText: string;
+  lifecycleState: "active_private" | "cancelled_private" | "expired_private";
+  possibleConceptIds: string[];
+  visibility: "private";
+  consentRecorded: false;
+  canUpload: false;
+  approvalStatus: "T01_AND_CONSENT_PENDING";
+  excludedPrivateSources: string[];
+}
+
+/** Read-only B08 preview. NEVER treated as Consent or an approved payload. */
+export async function previewPrivateGoalShare(
+  invoke: InvokeAdapter, assetId: string
+): Promise<PrivateSharePreview> {
+  validateAssetId(assetId);
+  const result: unknown = await invoke("preview_private_goal_share", { assetId });
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    throw new Error("私人 Share Preview Contract 格式錯誤");
+  }
+  const value=result as Record<string,unknown>;
+  if (typeof value.draftId !== "string" || !uuid.test(value.draftId) ||
+      typeof value.goalText !== "string" || !value.goalText.trim() ||
+      !["active_private","cancelled_private","expired_private"].includes(
+        String(value.lifecycleState)) ||
+      !Array.isArray(value.possibleConceptIds) ||
+      !value.possibleConceptIds.every((v:unknown)=>typeof v==="string") ||
+      value.visibility!=="private" || value.consentRecorded!==false ||
+      value.canUpload!==false || value.approvalStatus!=="T01_AND_CONSENT_PENDING" ||
+      !Array.isArray(value.excludedPrivateSources) ||
+      !value.excludedPrivateSources.every((v:unknown)=>typeof v==="string")) {
+    throw new Error("私人 Share Preview Contract 格式錯誤");
+  }
+  return value as unknown as PrivateSharePreview;
 }
