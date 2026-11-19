@@ -17,7 +17,7 @@
 4. 在 Cursor/PowerShell 執行：
 
 \`\`\`powershell
-pwsh -File .\tools\android-signing-compat.ps1 -NewApk "C:\Users\<你>\Downloads\app-arm64-debug.apk"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\android-signing-compat.ps1 -NewApk "C:\Users\<你>\Downloads\app-arm64-debug.apk"
 \`\`\`
 
 腳本從手機**只讀**抽出已安裝的 APK，比對其簽章與 Windows \`$env:USERPROFILE\.android\debug.keystore\`。若原本是由這台 Windows 開發、debug keystore 沒變，腳本會輸出「可安全重簽」；若找不到相同私鑰則停止，絕不解除安裝。
@@ -25,7 +25,7 @@ pwsh -File .\tools\android-signing-compat.ps1 -NewApk "C:\Users\<你>\Downloads\
 5. 如果報告顯示本機私鑰指紋與已安裝 App **相同**，可執行：
 
 \`\`\`powershell
-pwsh -File .\tools\android-signing-compat.ps1 -NewApk "C:\Users\<你>\Downloads\app-arm64-debug.apk" -Resign
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\android-signing-compat.ps1 -NewApk "C:\Users\<你>\Downloads\app-arm64-debug.apk" -Resign
 \`\`\`
 
 這會產生 \`*-compatible.apk\`，它以原本的 Windows Debug keystore 簽名，**不是從 APK 猜出私鑰**。原手機資料仍留在原 App 中。安裝產出的新檔，應可原位覆蓋（版本碼仍需符合 Android 限制）。
