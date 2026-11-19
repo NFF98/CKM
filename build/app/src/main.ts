@@ -434,32 +434,43 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
     const uncertain = document.createElement("p");
     uncertain.textContent = "仍不確定：" + (result.uncertainty || "尚未確認是否正確");
     output.append(quote, hint, uncertain);
-    if (result.intentCandidate) {
-      const intent = document.createElement("p");
-      intent.textContent = "可能想做的事（" + result.intentCandidate.domain + "）：" +
-        result.intentCandidate.goalText;
-      const evidence = document.createElement("p");
-      evidence.className = "fineprint";
-      evidence.textContent = "提出此建議的原文：" + result.intentCandidate.evidenceQuote;
-      const adopt = document.createElement("button");
-      adopt.type = "button";
-      adopt.className = "secondary";
-      adopt.textContent = "採用這個建議，先修改再確認";
-      adopt.addEventListener("click", () => {
-        if (selectedAssetId !== assetId) return;
-        const field = preview.querySelector<HTMLTextAreaElement>('textarea[data-goal-input="true"]');
-        if (!field) {
-          state.textContent = "Goal 編輯欄位尚未準備好，請再開啟這筆收藏。";
-          return;
-        }
-        field.value = result.intentCandidate!.goalText;
-        field.focus();
-        state.textContent = "私人建議已填入 Goal 編輯欄。請核對或修改，再按「確認 Goal」；尚未保存或分享。";
-      });
-      output.append(intent, evidence, adopt);
+    const candidates = result.intentCandidates.length > 0
+      ? result.intentCandidates : result.intentCandidate ? [result.intentCandidate] : [];
+    if (candidates.length) {
+      const heading = document.createElement("p");
+      heading.textContent = "可能想一起完成的事（最多三個私人候選；不是已確認配對）";
+      output.append(heading);
+      for (const [index, candidate] of candidates.entries()) {
+        const intent = document.createElement("p");
+        intent.textContent = (index + 1) + " · " +
+          (candidate.domain === "unknown"
+            ? "原文線索／領域未知，須本人判斷"
+            : "AI 私人候選 · " + candidate.domain) + "：" + candidate.goalText;
+        const evidence = document.createElement("p");
+        evidence.className = "fineprint";
+        evidence.textContent = "可核對的本人原文：" + candidate.evidenceQuote;
+        const adopt = document.createElement("button");
+        adopt.type = "button";
+        adopt.className = "secondary";
+        adopt.textContent = "採用候選 " + (index + 1) + "，先修改再本人確認";
+        adopt.addEventListener("click", () => {
+          if (selectedAssetId !== assetId) return;
+          const field = preview.querySelector<HTMLTextAreaElement>(
+            'textarea[data-goal-input="true"]'
+          );
+          if (!field) {
+            state.textContent = "Goal 編輯欄位尚未準備好，請再開啟這筆收藏。";
+            return;
+          }
+          field.value = candidate.goalText;
+          field.focus();
+          state.textContent = "已將私人候選填入 Goal 編輯欄；尚未確認、保存或分享。";
+        });
+        output.append(intent, evidence, adopt);
+      }
     } else {
       const unknown = document.createElement("p");
-      unknown.textContent = "目前找不到足夠證據推測你的合作目標；可以只收藏，或在下方自行說明。";
+      unknown.textContent = "UNKNOWN：無足夠證據推測你的合作目標。可以只收藏、回答一個必要問題，或自行說明。";
       output.append(unknown);
     }
     // A model-suggested question never becomes a confirmed intent or approved Concept.
