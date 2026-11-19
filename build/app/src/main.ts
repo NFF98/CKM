@@ -252,7 +252,7 @@ const errors: Record<string, string> = {
   MODEL_TIMEOUT: "Gemma 本地推論逾時，沒有使用雲端 AI。",
   MODEL_OUT_OF_MEMORY: "手機記憶體不足，已停止本地推論。",
   MODEL_BUSY: "本地模型正在處理其他工作，請稍後重試。",
-  MODEL_INPUT_UNKNOWN: "尚無可辨識的日文；請先 OCR 或保存人工更正。",
+  MODEL_INPUT_UNKNOWN: "vision_unknown：尚無可讀文字。請先 OCR、人工更正或只收藏；沒有圖片像素理解。",
   MODEL_INPUT_TOO_LARGE: "原始內容太長，暫時無法進行裝置端理解。",
   MODEL_INPUT_INVALID: "本地模型輸入不合法，操作已停止。",
   MODEL_INVALID_OUTPUT: "Gemma 輸出欄位不合法，系統沒有保存，也沒有建立任何 Goal。",
@@ -599,7 +599,7 @@ async function renderOcrEditor(assetId: string): Promise<void> {
   save.textContent = "保存人工修正";
   const privacy = document.createElement("p");
   privacy.className = "fineprint";
-  privacy.textContent = "OCR／更正只存於手機。Gemma E2B 尚未接入，不會猜測學習目標或使用雲端 AI。";
+  privacy.textContent = "圖片先經本地 ML Kit OCR，再用和純文字相同的 Gemma 意圖引擎；無文字保留 vision_unknown。Gemma 沒有接收圖片像素，也不使用雲端 AI。";
   panel.append(heading, state, recognized, run, field, save, privacy);
   preview.append(panel);
 
@@ -628,7 +628,16 @@ async function renderOcrEditor(assetId: string): Promise<void> {
     void (async () => {
       try {
         const result = await recognizeOcr(rust, assetId);
-        if (selectedAssetId === assetId) displayOcr(result);
+        if (selectedAssetId === assetId) {
+          displayOcr(result);
+          // US-01B: route OCR text through the existing Rust/Gemma command.
+          preview.querySelector(".model-panel")?.remove();
+          const readable = Boolean((result.correctedText ?? result.rawText ?? "").trim());
+          void renderModelPanel(assetId, readable);
+          if (!readable) {
+            state.textContent = "vision_unknown：圖片沒有可讀文字，不能假裝看懂像素。可人工修正或只收藏。";
+          }
+        }
       } catch (error) {
         if (selectedAssetId === assetId) state.textContent = errorMessage(error);
       } finally {
@@ -651,7 +660,8 @@ async function renderOcrEditor(assetId: string): Promise<void> {
           state.textContent = "人工修正已在手機保存；原始辨識結果仍保留，沒有建立 Goal。";
           // 來源變更後不可繼續顯示舊模型建議。
           preview.querySelector(".model-panel")?.remove();
-          void renderModelPanel(assetId);
+          // Source SHA is rechecked by Rust: old intent candidates cannot be reused.
+          void renderModelPanel(assetId, true);
         }
       } catch (error) {
         if (selectedAssetId === assetId) state.textContent = errorMessage(error);
