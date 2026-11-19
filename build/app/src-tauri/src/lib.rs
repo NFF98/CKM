@@ -1,6 +1,7 @@
 mod local_store;
 mod goal_draft;
 mod parameter_registry;
+mod local_consent;
 mod platform;
 use platform::NativeAdapter;
 use serde::Serialize;
@@ -203,13 +204,31 @@ fn update_private_goal_lifecycle(
     goal_draft::GoalStore::open(&root)?.update_lifecycle(input)
 }
 
-/// US-01D/B08: private local preview only; approval and Consent are NOT implemented.
+/// US-01D/B08: show private fields; final Cloud publish consent belongs to Sprint 2.
 #[tauri::command]
 fn preview_private_goal_share(
     app: tauri::AppHandle, asset_id: String,
 ) -> Result<goal_draft::PrivateSharePreview, String> {
     let root=app.path().app_data_dir().map_err(|_|"STORAGE_UNAVAILABLE".to_string())?;
     goal_draft::GoalStore::open(&root)?.share_preview(&asset_id)
+}
+
+/// B08: inspect which approved field identifiers the person may explicitly review.
+/// Local review is never Cloud publish authority.
+#[tauri::command]
+fn load_local_share_review(
+    app: tauri::AppHandle, asset_id: String,
+) -> Result<local_consent::LocalShareReview, String> {
+    let root=app.path().app_data_dir().map_err(|_|"STORAGE_UNAVAILABLE".to_string())?;
+    local_consent::LocalConsentStore::open(&root)?.load(&asset_id)
+}
+
+#[tauri::command]
+fn record_local_share_review(
+    app: tauri::AppHandle, input: local_consent::ReviewInput,
+) -> Result<local_consent::LocalShareReview, String> {
+    let root=app.path().app_data_dir().map_err(|_|"STORAGE_UNAVAILABLE".to_string())?;
+    local_consent::LocalConsentStore::open(&root)?.review(input)
 }
 
 /// B05: versioned allowlisted Concept Registry; T-01 complete whitelist remains OPEN.
@@ -248,7 +267,7 @@ fn list_parameter_proposals(
 }
 
 /// Explicit user action only: Rust makes its own confirmation event and increments version.
-/// Still private: B06 bounded slots and B08 sharing have NOT been implemented.
+/// Still private: B06 slots never authorize Cloud sharing; B08 review is local only.
 #[tauri::command]
 fn confirm_private_parameter(
     app: tauri::AppHandle,
@@ -279,6 +298,8 @@ pub fn run() {
             confirm_private_goal,
             update_private_goal_lifecycle,
             preview_private_goal_share,
+            load_local_share_review,
+            record_local_share_review,
             list_concept_registry,
             preview_parameter_concept,
             save_parameter_proposal,
