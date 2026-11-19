@@ -1,6 +1,6 @@
 # CAKAMI｜MVP 驗收測試參考規格（B01–B21）
 
-> **狀態：作為 Sprint AC 與 Coding 測試的參考依據；SOURCE 測試保持原定義，新增提案仍需核對。所有 App 測試均未執行，不可宣稱 PASS；Coding 不需要等待整份文件 LOCKED。**  
+> **狀態：作為 Sprint AC 與 Coding 測試的參考依據；SOURCE 測試保持原定義，新增提案仍需核對。已有部分 Android 真機測試：B02 保存與 B03 OCR／詞義理解子路徑使用者回報可用，但 **US-01 跨模組 Action Intelligence 真機 NG**；未執行的項目不得宣稱 PASS；Coding 不需要等待整份文件 LOCKED。**  
 > 日期：2026-11-17；適用：Android-first，18+ JLPT N2 Study Match，S01–S09＋S04a，B01–B21。  
 > 唯一 Build Backlog：../build/BACKLOG.md；測試基準：../design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx §15.5／§16.5 的 T01–T13、Functional v1.8 的四道 Gate；GUI Draft：../design/GUI_UX_SPEC.md；Technical Draft：../design/TECHNICAL_SPEC.md。  
 > **SOURCE** 表示已由設計鎖定的必測行為；其餘 Test Case IDs 與 Test Mechanism 是提案，需批准後方為正式驗收矩陣。**未執行 ≠ 通過**。
