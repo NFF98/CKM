@@ -642,4 +642,122 @@ mod tests {
             "ASSET_NOT_FOUND");
         assert_eq!(store.load(&missing).unwrap_err(), "ASSET_NOT_FOUND");
     }
+    #[test]
+    fn us01d_local_expiry_preview_and_cancel_cascade_to_b06_slots_offline() {
+        use crate::parameter_registry::{
+            ConfirmParameterInput,ParameterStore,SaveProposalInput
+        };
+        let dir=tempfile::tempdir().unwrap();
+        let assets=LocalStore::open(dir.path()).unwrap();
+        let asset=assets.save(text("我想找人一起練 JLPT N2 口說")).unwrap();
+        let goals=GoalStore::open(dir.path()).unwrap();
+        let goal=goals.confirm(input(&asset.id,"找 N2 口說學伴",0)).unwrap();
+        let parameters=ParameterStore::open(dir.path()).unwrap();
+        let p=parameters.save(SaveProposalInput {
+            draft_id:goal.id.clone(),expected_draft_revision:1,
+            concept_alias:"JLPT N2".into(),value:None,scope:"intent".into(),
+            expiry_policy:"intent_lifecycle".into(),expires_at_ms:None,expected_version:0,
+        }).unwrap();
+        parameters.confirm(ConfirmParameterInput {
+            draft_id:goal.id.clone(),proposal_id:p.id,expected_version:1,
+            confirmation_action:"confirm_parameter".into(),
+        }).unwrap();
+        let preview=goals.share_preview(&asset.id).unwrap();
+        assert_eq!(preview.possible_concept_ids,vec!["study.jlpt_level"]);
+        assert!(!preview.can_upload);
+        assert!(!preview.consent_recorded);
+        assert_eq!(preview.visibility,"private");
+        assert!(!preview.excluded_private_sources.contains(&"local_matching_slots"));
+        let expiry=now_ms().unwrap()+86_400_000;
+        let dated=goals.update_lifecycle(LifecycleUpdateInput {
+            asset_id:asset.id.clone(),expected_revision:1,expected_lifecycle_version:0,
+            action:"set_expiry".into(),expires_at_ms:Some(expiry),
+        }).unwrap();
+        assert_eq!(dated.expires_at_ms,Some(expiry));
+        assert_eq!(dated.lifecycle_state,"active_private");
+        assert_eq!(dated.lifecycle_version,1);
+        let withdrawn=goals.update_lifecycle(LifecycleUpdateInput {
+            asset_id:asset.id.clone(),expected_revision:1,expected_lifecycle_version:1,
+            action:"cancel_goal".into(),expires_at_ms:None,
+        }).unwrap();
+        assert_eq!(withdrawn.lifecycle_state,"cancelled_private");
+        assert!(!withdrawn.publishable);
+        assert!(!withdrawn.share_consent);
+        let no_share=goals.share_preview(&asset.id).unwrap();
+        assert!(no_share.possible_concept_ids.is_empty());
+        assert!(!no_share.can_upload);
+        assert_eq!(goals.confirm(input(&asset.id,"復活",1)).unwrap_err(),
+            "LIFECYCLE_INACTIVE");
+        assert_eq!(goals.update_lifecycle(LifecycleUpdateInput {
+            asset_id:asset.id.clone(),expected_revision:1,expected_lifecycle_version:2,
+            action:"set_expiry".into(),expires_at_ms:Some(now_ms().unwrap()+86_400_000),
+        }).unwrap_err(),"LIFECYCLE_INACTIVE");
+        let conn=goals.connect().unwrap();
+        let slots:i64=conn.query_row("SELECT count(*) FROM local_matching_slots",[],
+            |r|r.get(0)).unwrap();
+        assert_eq!(slots,0,"Cancellation must immediately revoke B06 private slots");
+        drop(goals);drop(parameters);drop(assets);
+        let reopened=GoalStore::open(dir.path()).unwrap();
+        assert_eq!(reopened.load(&asset.id).unwrap().unwrap().lifecycle_state,
+            "cancelled_private");
+        assert!(!reopened.share_preview(&asset.id).unwrap().can_upload);
+    }
+
+    #[test]
+    fn us01d_expired_goal_blocks_parameter_admission_without_cloud() {
+        let dir=tempfile::tempdir().unwrap();
+        let assets=LocalStore::open(dir.path()).unwrap();
+        let asset=assets.save(text("N2")).unwrap();
+        let goals=GoalStore::open(dir.path()).unwrap();
+        let goal=goals.confirm(input(&asset.id,"找 N2 學伴",0)).unwrap();
+        goals.update_lifecycle(LifecycleUpdateInput {
+            asset_id:asset.id.clone(),expected_revision:1,expected_lifecycle_version:0,
+            action:"set_expiry".into(),expires_at_ms:Some(now_ms().unwrap()+86_400_000),
+        }).unwrap();
+        // Simulate the wall clock after expiry without sleeping or networking.
+        let conn=goals.connect().unwrap();
+        conn.execute("UPDATE local_goal_lifecycle SET expires_at_ms=1 WHERE draft_id=?1",
+            params![goal.id]).unwrap();
+        let expired=goals.load(&asset.id).unwrap().unwrap();
+        assert_eq!(expired.lifecycle_state,"expired_private");
+        assert!(!expired.publishable);
+        assert!(goals.share_preview(&asset.id).unwrap().possible_concept_ids.is_empty());
+        let p=crate::parameter_registry::ParameterStore::open(dir.path()).unwrap();
+        assert_eq!(p.save(crate::parameter_registry::SaveProposalInput {
+            draft_id:goal.id,expected_draft_revision:1,concept_alias:"N2".into(),
+            value:None,scope:"intent".into(),expiry_policy:"intent_lifecycle".into(),
+            expires_at_ms:None,expected_version:0,
+        }).unwrap_err(),"GOAL_CONFIRMATION_REQUIRED");
+    }
+
+    #[test]
+    fn us01d_rejects_forged_consent_deadline_and_stale_user_revision() {
+        let dir=tempfile::tempdir().unwrap();
+        let asset=LocalStore::open(dir.path()).unwrap()
+            .save(text("N2")).unwrap();
+        let goals=GoalStore::open(dir.path()).unwrap();
+        let goal=goals.confirm(input(&asset.id,"我要練 N2",0)).unwrap();
+        assert!(serde_json::from_value::<LifecycleUpdateInput>(serde_json::json!({
+            "assetId":asset.id,"expectedRevision":1,"expectedLifecycleVersion":0,
+            "action":"set_expiry","expiresAtMs":now_ms().unwrap()+100_000,
+            "consent":true
+        })).is_err());
+        for (action,expiry) in [
+            ("set_expiry",None),("cancel_goal",Some(now_ms().unwrap()+50_000)),
+            ("publish",None),("set_expiry",Some(1)),
+        ] {
+            assert_eq!(goals.update_lifecycle(LifecycleUpdateInput {
+                asset_id:asset.id.clone(),expected_revision:1,
+                expected_lifecycle_version:0,action:action.into(),
+                expires_at_ms:expiry,
+            }).unwrap_err(),"LIFECYCLE_INVALID_ACTION");
+        }
+        assert_eq!(goals.update_lifecycle(LifecycleUpdateInput {
+            asset_id:asset.id.clone(),expected_revision:2,expected_lifecycle_version:0,
+            action:"cancel_goal".into(),expires_at_ms:None,
+        }).unwrap_err(),"GOAL_REVISION_CONFLICT");
+        assert_eq!(goals.load(&asset.id).unwrap().unwrap().id,goal.id);
+        assert_eq!(goals.load(&asset.id).unwrap().unwrap().lifecycle_version,0);
+    }
+
 }
