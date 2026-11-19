@@ -5,6 +5,52 @@
 > 唯一 Build Backlog：../build/BACKLOG.md；測試基準：../design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx §15.5／§16.5 的 T01–T13、Functional v1.8 的四道 Gate；GUI Draft：../design/GUI_UX_SPEC.md；Technical Draft：../design/TECHNICAL_SPEC.md。  
 > **SOURCE** 表示已由設計鎖定的必測行為；其餘 Test Case IDs 與 Test Mechanism 是提案，需批准後方為正式驗收矩陣。**未執行 ≠ 通過**。
 
+## User Story End-to-End Gate（2026-11-19 User 決策：以使用者旅程交付）
+
+**新開發準則：** 模組 BXX 可以分別 Coding/CI，但只有使用者從起點操作到最後有**真狀態**，才能把 User Story 判為 PASS。既有 `T01–T13`、`E2E-01～05`、`AI-LOCAL` 不改名、不刪除；新 `US-` IDs 是**跨 BXX 整合驗收**，不取代安全單元測試。詳細順序見 [User Story Sprint Plan](../build/SPRINT_PLAN.md)。
+
+### US-01：文字／圖片 → 本地理解 → 可能意圖 → 追問 → 本人確認（**目前 FAIL/NG**）
+
+| Test ID | 使用者真實操作 | PASS 必須包含 |
+|---|---|---|
+| **US-01-01** | Android App 直接輸入純文字：「我想找人一起練 JLPT N2 口說」 | **不依賴 OCR**，手機 Gemma 實際提出基於原文的私人 Goal 候選；使用者可一鍵採納或修改→本人確認→Rust SQLite 保存有來源、確認事件與版本的私人 Goal；重啟仍在，**不能要求從零自己重寫 Goal** |
+| **US-01-02** | 純文字「パクる」或其他欠缺情境的短語 | 誠實顯示不知道真正 Goal（UNKNOWN）、允許只收藏或問真正能區分意圖的問題；**不能強迫歸類成 Study／找學伴、不能自動公開** |
+| **US-01-03** | Drop 有日文的 N2 圖片→真正 OCR→Gemma→選/改私人 Goal | 和純文字**同一套 Intent Pipeline**；更正 OCR 後舊候選失效；原圖、OCR 沒有未授權 Cloud 呼叫 |
+| **US-01-04** | 輸入 Fashion/Car/混合語境的文字或截圖，手機歷史主要是 Study | 能保留非 Study／UNKNOWN，不強制 N2 目標；現有 OCR-only 不可宣稱理解無文字照片像素；Fashion/Car 不可於 P1 對外配對 |
+| **US-01-05** | 使用者確認 Goal 後，AI 提出合法 Need/Offer/期限等**僅已批准 Registry Concepts** 候選 | 本人可核對／編輯後才確認；B05 Rust 強制來源、scope/expiry/版本；未核准 Concepts 維持 UNKNOWN，**不得 AI 自創已合法欄位** |
+| **US-01-06** | 追問缺資訊及實測 8 個活躍 Concepts 上限 | B09 每次主動 **0～3 題（含 Goal 確認）**，多次重試不重問；B06 SQLite/Rust 硬限制 **最多 8 種已核准有效 Matching Concepts**；第 9 個必要概念不能悄悄覆蓋既有硬條件（T10–T13） |
+| **US-01-07** | 使用者按「只收藏」、取消確認，或離線後修改／撤銷 | 無自動 Goal/Consent/Cloud；已確認版本/事件真實、狀態可回讀；B07/08 只提供合法私人操作／預覽，不假裝 Cloud 已同步 |
+
+**US-01 PASS 條件：** US-01-01～07 的真 Android User Journey（含整合的 Rust/SQLite／錯誤測試）均有 Evidence，相關 BXX P0 Gate 也 PASS。**現在整條 US-01 = FAIL**，因 Gemma 真機只解釋文字、沒有可用意圖候選→確認的連接。既有 B03 OCR/詞義及 B05 Registry CI PASS 不能抵銷這個 NG。
+
+### US-02：本人授權 → Cloud 真正找到相容真人（**NOT_RUN**）
+
+| Test ID | 使用者真實操作 | PASS 必須包含 |
+|---|---|---|
+| **US-02-01** | 真 A/B 帳號有各自已確認的私人 N2 Intent → 在手機逐項預覽與同意分享 | 同意前 Cloud 不存在公開 Intent；同意後只送核准最少欄位，Server 驗證 ownership/8-slot/expiry/version/Consent；Cloud 無模型推論 |
+| **US-02-02** | A 找相容的 B，以及沒有符合者情境 | 相同 Goal／互補 Need↔Offer 和時間／硬條件都正確；真的找到合法候選或真 0 人；不能虛構真人／相似度假成功 |
+| **US-02-03** | B 封鎖、撤銷、過期、條件不合、跨帳號直打 API | RLS／Server 拒絕；離線撤銷本機排除、重連後 Server ACK、其他人不可再搜尋 |
+| **US-02-04** | Pair-only 必要追問 | 最多 2 題，答案僅 Pair scope、限時有效；不得改永久 Profile 或繞過硬限制 |
+
+**US-02 PASS 條件：** US-02-01～04 有雙帳號＋真 Supabase E2E/攻擊負例、Server 實際紀錄、合法輸入輸出 Evidence；不是 UI 的候選 mock。
+
+### US-03：真合作 → Server 可信完成 → 自己手機留下結果（**NOT_RUN**）
+
+| Test ID | 使用者真實操作 | PASS 必須包含 |
+|---|---|---|
+| **US-03-01** | A 邀 B，B 接受／拒絕／封鎖不同情境 | 只有雙方合法接受才啟 Chat；第三人和不合法狀態呼叫 API 被拒，重放/並發不能重複 Session |
+| **US-03-02** | A/B 真文字 Chat 並完成 15 分鐘 Session → 各自確認 | Server 以已核准計時規則及兩份不同使用者確認恰建立 **1** 筆可信 COMPLETED |
+| **US-03-03** | 少於 15 分鐘／單方確認／No-show／取消／越權/重試 | 不計 COMPLETED、不重複計算；Chat 訊息數／點擊不等於完成 |
+| **US-03-04** | 本人登入手機同步/重試已完成 Outcome，重新開啟 App | **僅本人合法可讀且事前核准的** OutcomeReceipt 入本地 SQLite，供下一次已確認上下文使用；另一人的私人資料/跨人聚合不得偷傳。具體分享欄位未核准則 BLOCKED 而非偽裝 PASS |
+
+**US-03 PASS 條件：** US-03-01～04 + B16～18 Server/RLS/SQL/Android 真 E2E。未核准的 OutcomeReceipt 權限與保留期須正式決策；不得以合成手機結果代替可信 Server 完成。
+
+### 數據準確率與模型比較（設計假說，不是當前實際 PASS）
+
+- **不能**以 E2B 自報「60–90% confidence」當作意圖準確率，也不能因用戶按確認就宣稱 AI 預測 90%。應比較「AI 初次意圖 Top-1 與獨立真人 Ground Truth 一致率」「應為 UNKNOWN 時的正確拒判率」「經少量追問後與真人意圖一致率」，另報不合適配對率／問題數／完成合作比率。
+- 使用者提出的 **60～90% 是欲驗證的目標區間**，尚非已完成數據；目前 [AI-TEXT-8](#ai-text-8純文字--意圖候選--b04b05-確認--b06-最多-8-slots設計草案not_run) 提的開發 ≥60%／確認後 ≥90% 只屬建議門檻，待真人標註集及 User 最終決策。分純文字、OCR、Study、Fashion、Car、UNKNOWN 報告；低證據不亂猜也算成功的安全性能力。
+- **B20 仍 P1**，不因對照研究變成 B21 必過的硬性 Gate；但所有已聲稱的準確率必須有測試 Evidence。
+
 ## 已核准驗收紅線：Phase 1 不使用雲端 AI（2026-11-17）
 
 - 所有 OCR、E2B、AI 提議、Embedding 生成（若有）必須在 Android 裝置本地完成；禁止遠端推理與失敗時 Cloud AI fallback。
