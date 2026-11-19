@@ -39,6 +39,43 @@
 - **ACT-03（NOT_RUN）**：完整句子、資訊複雜截圖、OCR 更正後仍能提出適合的有限選項；不確定時誠實顯示；飛航模式本地執行，且重開 App 保留已選的本地結果。
 - **狀態語義**：B03／B04 既有 Coding 仍在，但 Action Intelligence E2E **FAIL，不得稱為已完成產品目標**；修復方案尚未 Coding／APK 驗收。B05 Registry CI PASS 不等於本項通過。
 
+## AI-INTENT：跨領域本地意圖引擎驗收（DESIGN PROPOSAL；2026-11-19）
+
+**狀態：NOT_RUN。** 產品核心須有通用領域識別、Intent/Content 分離、可拒絕強制分類、經本人確認的合作需求及安全 Cloud 投影。P1 只上線 Study N2，Fashion/Car 是**離線跨領域泛化／負例測試**，不准因此暗中啟用 P2+ 雲端配對。
+
+| Case | 輸入／條件 | 必須發生的結果 |
+|---|---|---|
+| AI-INTENT-01 | 只有 `パクる` | 可解釋詞義；`domain=unknown`／`goal=unknown`；不得擅自建立 Study Goal 或傳 Cloud |
+| AI-INTENT-02 | JLPT N2 教材中的 `パクる`，有真實教材來源證據 | 可建議 Study 相關私人合作意圖；需要本人挑選／修改確認才建立 Goal |
+| AI-INTENT-03 | 時裝設計討論 `パクる`，與日文學習無關 | 不得強制歸 Study；可辨識 Fashion 語境／保留 UNKNOWN；不得自動假設要購買、模仿或找合作人 |
+| AI-INTENT-04 | 汽車改裝文章 `パクる`，與日文學習無關 | 不得強制歸 Study；可辨識 Car 語境／保留 UNKNOWN；不得自動推定求助或要買零件 |
+| AI-INTENT-05 | 同時含 Study 與 Fashion/Car 線索，或證據互相衝突 | 保留多個假設、尋找最小關鍵區別問題／允許只收藏；模型不能偽造已確認 Goal |
+| AI-INTENT-06 | 手機過往 20 筆 Study，但本次是明確 Fashion 截圖 | 不能用歷史覆蓋本次證據；不自動把 Fashion 映射為 N2 |
+| AI-INTENT-07 | 沒有文字的服飾／汽車照片，當前只裝文字 OCR 模型 | 誠實顯示 `vision_unknown`，不能宣稱看懂剪裁、車型或設計；未有真實 VLM Adapter 前不得算跨領域圖片理解 PASS |
+| AI-INTENT-08 | B03 候選缺 source、混入 confirmed/consent/visibility，或更正 OCR 後重讀舊候選 | Rust 擋下偽造狀態／缺來源／過期候選；原文已改則舊建議失效 |
+| AI-INTENT-09 | 合法候選但用戶按「只收藏／稍後」 | 無 Goal、無配對、無雲端同步；私人資料仍存在手機 |
+| AI-INTENT-10 | 用戶確認 Study Goal，B05 尚無正式 Need/Offer Concept | 保留 UNKNOWN，不用模型自創 Registry／Share 白名單；僅合法 B06/08/12 契約可同步 |
+| AI-INTENT-11 | 未上線 Fashion/Car Domain Pack 或未開放 Match Capability | 雲端拒絕發布/搜尋該領域；已核准 P1 Study 路徑仍正常 |
+| AI-INTENT-12 | B18 兩方有效完成，回傳本人可見 OutcomeReceipt；或只單方確認／低於 15 分鐘 | 前者同步回本地並可作下次可解釋的回饋；後者絕不當 COMPLETED；不得洩露另一方私人內容 |
+
+**建議評估方法**（非已達成結果）：用至少 100 筆 Study、100 筆 Fashion、100 筆 Car/Other／跨域、歧義與新類別保留測試集；區分「有充分證據的 domain 命中率」和「證據不足時有沒有選 UNKNOWN」，不可只靠總 accuracy；逐筆標記 AI 猜的 Goal 是否被本人更改，跨域錯誤率、誤發布率、第一次有效 Intent 所需操作、Android 推論耗時與離線可用。與「Study 寫死規則」「固定幾個動作按鈕」做公平對照，未通過之前不得宣稱跨域 MOAT。
+
+此節對應 [Universal Intent Engine 設計草案](../design/ACTION_INTELLIGENCE_ARCHITECTURE_v1_DRAFT.md#1a-跨領域共用的真正大腦universal-intent-engine2026-11-19-user-方向設計草案)，並需在正式 domain 開放前逐領域增加真實視覺與多人端到端驗收。
+
+## AI-TEXT-8｜純文字 → 意圖候選 → B04/B05 確認 → B06 最多 8 slots（設計草案，NOT_RUN）
+
+| Case | 操作 | 必須驗證 |
+|---|---|---|
+| AI-TEXT-01 | **純文字**「想找人一起練 JLPT N2 口語」 | 不經 OCR；B03 產生有證據的私人 Study/Goal 候選；B04 可直接選擇/編輯並本人確認；B05 僅核准 Concept 能確認；不能自動 Consent |
+| AI-TEXT-02 | **純文字**「パクる」 | 詞義可解釋；意圖/領域保持 UNKNOWN；不能依 P1 市場或過往偏好強制認定找 N2 學伴；不填滿 8 slots |
+| AI-TEXT-03 | **純文字**「想找人一起研究 BMW E46 改裝，週末有空」 | Domain 可為 Car；Goal/Need/主題/時間作獨立候選，Offer/精確時間/地點/技能 UNKNOWN；不得把 8 個展示面向直接算作 8 個合法 Matching slots；P1 不對外配對 Car |
+| AI-TEXT-04 | B09 初次 Goal 確認及追問 | 最多 **3 題** AI 主動詢問（含 Goal 確認），一個答案可以確認多個合法概念；已足夠可 0～1 題，不得要求逐一回答 8 題 |
+| AI-TEXT-05 | B06 已有 8 種有效 Matching Concepts，嘗試新增第 9 種 | SQL/Rust 拒絕或請本人明確決定，絕不能自動刪掉硬條件；UNKNOWN/私人 Content 不占活躍 slot |
+| AI-TEXT-06 | 將 Gemma 報告的「85% confidence」當作可發布意圖 | Rust 必須拒絕用模型自報信心替代 B04/B05 本人確認與 B08 Consent；未有經驗校準不得把 85% 稱為準確率 |
+| AI-TEXT-07 | 用獨立標註純文字、OCR、跨領域語境與 UNKNOWN 測試集衡量意圖 | 分別報告**確認前 top-1 正確率、UNKNOWN 正確拒判率、確認後意圖一致率、誤確認率、問題數**；開發期 60%／確認後 90% 僅為候選目標、**尚未測得／待核定**，不得借用單一 N2 測試推論跨域成功 |
+
+所有 Cases **NOT_RUN**。這裡的**8 slots**依既有 Business v1.2 / System v1.7 是每個 Intent 最多 8 種**已核准、有效、可參與匹配的 Parameter Concepts**；8 個展示面向**不等於**固定 8 個必填欄位、8 題 AI 問題或 8 種一律要公開的屬性。見 [Action Intelligence Architecture v1 Draft](../design/ACTION_INTELLIGENCE_ARCHITECTURE_v1_DRAFT.md)。
+
 ## 1. Done 的唯一判準
 
 每個 B-ID 須同時具備：
