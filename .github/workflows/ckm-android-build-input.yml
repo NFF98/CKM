@@ -1,0 +1,65 @@
+name: CAKAMI Android 0.1.1 build input (NOT a user installer)
+# Builds CI debug output ONLY for offline re-signing with the existing fixed
+# certificate. This artifact must never be sent to users for installation.
+on:
+  pull_request:
+    types: [labeled]
+permissions:
+  contents: read
+
+jobs:
+  raw-build:
+    name: Build ARM64 debug APK for offline pinned signing
+    if: github.event.label.name == 'apk-signing-input'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Upgrade npm for stable dependency install
+        run: npm install -g npm@11
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK / NDK
+        run: |
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.0.12077973'
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: build/app/src-tauri
+      - name: Install project dependencies
+        working-directory: build/app
+        run: npm install --no-audit --no-fund
+      - name: Initialize Tauri Android project
+        working-directory: build/app
+        run: npx tauri android init --ci
+      - name: Build temporary debug signing input
+        working-directory: build/app
+        run: npx tauri android build --debug --apk --target aarch64 --ci
+      - name: Verify original App ID and bumped version
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find build/app/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          BADGING="$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")"
+          echo "$BADGING" | grep -E "^package: name='com.nff98.ckm.dev' versionCode='[0-9]+' versionName='0.1.1'"
+          VERSION_CODE="$(echo "$BADGING" | sed -n "s/^package: name='com.nff98.ckm.dev' versionCode='\\([0-9]*\\)'.*/\\1/p")"
+          test "$VERSION_CODE" -gt 1000
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" > /dev/null
+      - name: Upload raw APK for offline signing, NEVER to install directly
+        uses: actions/upload-artifact@v4
+        with:
+          name: RAW-NOT-AN-UPGRADE-REQUIRES-PINNED-SIGNATURE
+          path: build/app/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
