@@ -42,6 +42,7 @@ export interface PrivateParameter {
   goalRevision: number;
   version: number;
   stale: boolean;
+  matchSlotIndex: number | null;
   createdAtMs: number;
   updatedAtMs: number;
 }
@@ -113,6 +114,9 @@ export function parsePrivateParameter(value: unknown): PrivateParameter {
     !Number.isSafeInteger(value.goalRevision) || Number(value.goalRevision) < 1 ||
     !Number.isSafeInteger(value.version) || Number(value.version) < 1 ||
     typeof value.stale !== "boolean" ||
+    (value.matchSlotIndex !== null &&
+      (!Number.isSafeInteger(value.matchSlotIndex) || Number(value.matchSlotIndex) < 0 ||
+       Number(value.matchSlotIndex) > 7)) ||
     !Number.isSafeInteger(value.createdAtMs) || !Number.isSafeInteger(value.updatedAtMs) ||
     (value.expiryPolicy === "fixed" && (value.expiresAtMs === null || Number(value.expiresAtMs) <= 0)) ||
     (value.expiryPolicy === "intent_lifecycle" && value.expiresAtMs !== null)
