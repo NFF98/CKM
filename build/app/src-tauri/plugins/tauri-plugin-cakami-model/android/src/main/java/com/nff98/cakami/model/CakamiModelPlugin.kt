@@ -264,8 +264,10 @@ JSON keys:
   若原文清楚表達找人合作的 Goal 就不要問。若只有孤立單字或無個人需求的文章，
   不要強迫問題；只有合理且需要區分意圖時才問。永遠不可假設使用者已回答。
   若上下文含「【本人補充（非模型推測）】」，代表這是使用者自己的答案，可當證據。
-"intentCandidate": null，或私人候選物件：
+"intentCandidate": null，或最重要的一個私人候選物件：
   {"domain":"study|fashion|car|other|unknown","goalText":"使用者可能想和人共同完成的具體事情","evidenceQuote":"原文中逐字支持該意圖的片段"}。
+"intentCandidates": []，或最多 2 個不同的私人合作 Goal 候選（同上述格式，必須各有原文字面證據）。
+  若不確定，不要為了湊數造第二個候選；可以只回 []。intentCandidate 與 intentCandidates 可以並存，但不允許產生任何確認事件。
 只有原文**明確表示本人想找人合作／一起做事**時，intentCandidate 才可非 null。
 例如「我想找人一起練 JLPT N2 口說」可建議 Goal；只有「パクる」或教材、廣告，不代表想找學伴，必須為 null。
 不要假定看到衣服想購買、看到汽車就想改裝；無上下文保留未知。
