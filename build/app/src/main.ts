@@ -805,7 +805,7 @@ async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Pr
   // From a PERSON-CONFIRMED Goal, surface the one currently approved N2 concept.
   // This is transparent deterministic evidence extraction, NOT a Gemma-confirmed slot.
   // The person must still explicitly confirm the observed parameter below.
-  if (/(?:\\b(?:jlpt[\\s-]*)?n2\\b|日[語文]二級)/iu.test(goal.goalText)) {
+  if (/(?:\b(?:jlpt[\s-]*)?n2\b|日[語文]二級)/iu.test(goal.goalText)) {
     const suggestion = document.createElement("div");
     suggestion.className = "goal-parameter-suggestion";
     const line = document.createElement("p");
