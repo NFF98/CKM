@@ -2,6 +2,22 @@
 
 > GitHub 追蹤用，不是新 Governance Gate。**只有具備真實 Evidence 才可標 PASS**；上層依據 [Build Bible](../BACKLOG.md)／[Spec Traceability](../TRACEABILITY.md)／[Sprint 1 AC](SPRINT-01_LOCAL_AI.md)。
 
+## 2026-11-19 最新交付狀態（User Story 優先；舊 BXX 表是歷史工程證據）
+
+| User Story／切片 | 真實測試狀態 | 根因／下一步 | 絕對不能算 PASS 的證據 |
+|---|---|---|---|
+| **US-01 整條：理解→推測→必要追問→本人確認→私人合法 Intent** | **FAIL / NG（使用者 Android 回報）** | Gemma 能解釋 `パクる`，但 B03 只回 contentHint；B04 空白 Goal 手填、B05 手填參數、B09 未做；**先修 US-01A** | B03 詞義正確、B04 Rust Gate/SQLite 單元測試、B05 Registry CI 綠燈 |
+| **US-01A 純文字→私人候選→本人確認/保存** | **FAIL（缺整合；待新版真機復測）** | 在原本 B02-B05 代碼上加候選資料契約、UI 選擇／編輯與 Rust 確認；不需要再重做 B01 | Gemma 能生成一段解釋 |
+| **US-01B 圖片 OCR→同一套 Intent 流程** | **FAIL（整合未實作，OCR/詞義子能力初步 PASS）** | 保留本地 OCR/來源驗證，接 US-01A 引擎；跨域歧義保留 UNKNOWN | OCR 辨識 `パクる` |
+| **US-01C 智能追問／Concept Registry／8-slot** | **NOT_RUN（未完成整合）** | B05 現僅 N2 alias；B06/B09 NOT_STARTED；新增 Rust + SQLite 跨模組 Gate、B09 ≤3 題 | B05 既有 Unit Tests PASS |
+| **US-01D 私有生命週期／分享預覽／離線** | **NOT_RUN** | B07/B08 尚未開始；不得在未授權情況上傳或假稱 Cloud Ready | 單張圖片可離線保存 |
+| **US-02 Cloud 真配對** | **NOT_RUN** | Sprint 2；待合法 US-01 Intent 及 B08/12 同意 | UI 假候選／Cloud mock |
+| **US-03 真人共同完成＋可信 Outcome 回本地** | **NOT_RUN** | Sprint 2；B16-B18 尚未實作，OutcomeReceipt 合法欄位待決 | 單方確認／只產生 Chat |
+
+**目前下一個 Coding 任務＝US-01A**，輸入 `我想找人一起練 JLPT N2 口說` → 有根據的私人 Goal 候選 → 本人選/改/確認 → 本機 SQLite 真的保存，重開仍在；輸入 `パクる` 則未知／只收藏，不得猜唯一 Goal。跨 B03/B04/B05 完成 Contract Tests，再依現有批次 APK 政策做真機驗收。**任何 User Story FAIL，不因其中 BXX 的單元測試 PASS 而關閉。**
+
+**新執行依據：** [User Story Sprint Plan](../SPRINT_PLAN.md)／[Sprint 1 US-01 切片](SPRINT-01_LOCAL_AI.md)／[User Story Acceptance](../../test/ACCEPTANCE_SPEC.md)。下方原始 B01-B09 舊紀錄保留供追溯，其中早期寫的 NOT_RUN 以當時版本／日期為準，**不能蓋過 2026-11-19 使用者已回報的真機結果**。
+
 | Task | 開發狀態 | 測試狀態 | 目前能客觀證明的交付／下一步 |
 |---|---|---|---|
 | **B01** | IN_PROGRESS | Android 啟動＋Bridge：使用者回報成功；飛航模式 NOT_RUN | PR #6：TS／Rust Unit Tests PASS，Android APK 成功打包。使用者回報 Android 0.1.0 上可顯示 `Rust Bridge 已回應`、`平台：android`。未有飛航模式／adb 日誌；S1-AC01 尚未全部 PASS。 |
