@@ -6,7 +6,7 @@
 - 已使用離線建立的**專用 3072-bit RSA PKCS12 固定簽章**，重新簽署最後一版完整 Sprint 1 代碼 `eceb2f34c1a2e51bf99a518e90e85736b7a30c2f` 的 Android APK。
 - **App ID**：`com.nff98.ckm.dev`；**Version**：`0.1.0`／`versionCode 1000`。
 - **固定 APK 公鑰憑證 SHA-256**：`a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5`。
-- **已簽署 APK SHA-256**：`9ade2e0aea3cb2fb7b0ab51279f1f3af726f18364a3662ce6efb047b68753dc8`，169,347,xxx bytes（實際以 GitHub Repo 外的 ChatGPT artifact 為準）。
+- **已簽署 APK SHA-256**：`9ade2e0aea3cb2fb7b0ab51279f1f3af726f18364a3662ce6efb047b68753dc8`，169,349,108 bytes（使用者目前 ChatGPT 對話的私人附件）。
 - **驗證**：Android SDK 35 `apksigner verify` 通過 v2、v3；簽署前後所有 961 個非 META-INF ZIP entries CRC 完全一致，`AndroidManifest.xml` binary bytes 完全一致。
 - APK 本體在使用者目前 ChatGPT 對話的 attachment artifact 中；**不要提交簽署私鑰到 GitHub**。用戶可以直接在手機下載並安裝；不需 USB／ADB／Python。
 - 建議操作：先決定是否要保留原有收藏（解除安裝會**永久刪除 App 私有資料**），然後**解除安裝舊 CAKAMI 與 CAKAMI TEST**（如手機皆存在），再安裝固定簽章的 **CAKAMI**；E2B 只需在此新版重新下載一份（約 2.59 GB），不再有兩份。**若還未下載新 APK，請勿先卸載舊 App。**
