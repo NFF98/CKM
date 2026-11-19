@@ -66,10 +66,9 @@ internal class ModelAutoDownloader(
      * already exist, repair the checksum marker offline before ANY network
      * request. A model whose hash is wrong is never silently overwritten.
      */
-    fun prepare(allowMetered: Boolean, ready: Boolean): DownloadProgress {
+    fun prepare(allowMetered: Boolean): DownloadProgress {
         val action = ModelReusePolicy.decide(model, checksum, expectedSize, expectedHash)
-        if (ready && action == ModelBootAction.USE_INSTALLED ||
-            action == ModelBootAction.USE_INSTALLED) {
+        if (action == ModelBootAction.USE_INSTALLED) {
             state = "ready"
             lastError = null
             return progress(true)
