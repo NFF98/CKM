@@ -8,7 +8,7 @@
 
 | Slice | 真正提交的程式與跨模組測試 | 工程 CI／真機驗收 |
 |---|---|---|
-| **US-01A** | 沿用 PR #16 的 B02→B03→B04 私人候選／本人確認。Rust／SQLite／TS 原本 CI PASS。 | **Android E2E NOT_RUN**；不宣稱初次候選命中率，模型仍以單一 `intentCandidate` 為主。 |
+| **US-01A** | 沿用 PR #16 的 B02→B03→B04 私人候選／本人確認。Rust／SQLite／TS 原本 CI PASS。 | **Android E2E NOT_RUN**；不宣稱初次候選命中率，PR #17 新增最多三個有原文證據的私人 `intentCandidates`，舊單一候選 SQLite JSON 可向後相容；仍未有真機準確率。 |
 | **US-01B** | `main.ts` 將 OCR／更正後的有效文字送入原本 `local_model_propose`，不建立圖片專用 AI；Rust 整合測試驗證 OCR→模型候選→B04 本人確認、來源更正後舊候選失效、無文字為 `vision_unknown`。 | 新版 GitHub CI 見 PR #17 Checks，真機 **NOT_RUN**。**Gemma 沒有圖片像素輸入，不能說看到圖就理解圖像本身**。 |
 | **US-01C／B05+B06** | 實際 SQLite `local_matching_slots`，0–7 容量、`UNIQUE(draft_id,slot_index)`、`UNIQUE(draft_id,concept_id)`、來源／確認事件／版本 Admission Trigger，B05 人工確認同交易分配 slot；修改 Goal／Parameter 或撤銷讓舊 slot 失效；TypeScript 嚴格驗證 `matchSlotIndex`。 | SQLite 直接 SQL 偽造／slot 8、來源刪除連動測試已提交。**T01 完整 Approved Registry 白名單未核准，現僅 N2 一種合法概念；8 種＋第 9 種不同合法概念的實際邊界測試 BLOCKED，不能用偽造 8 種類別代替。** |
 | **US-01C／B09** | 本地模型可回單一可空 `clarifyingQuestion`；Rust 只記住來源 hash 對應的真人回答，SQLite 最多 2 題（含去重與同一時間一題），另保留 B04 本人 Goal 確認為第 3 步。回答後回到同一 Gemma 引擎重新推論；UNKNOWN／不必問時可 0 題。 | Rust／SQLite quota、重試、人工回答非模型證據、來源更正失效＋TypeScript Contract 已提交；**Android 問題是否真的有用、Gemma 能否穩定輸出題目：NOT_RUN**。不是固定 8 個問題。 |
