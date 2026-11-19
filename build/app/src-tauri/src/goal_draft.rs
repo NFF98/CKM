@@ -421,7 +421,8 @@ mod tests {
         let model_output = crate::local_store::ModelSuggestion {
             asset_id: a.id.clone(), status: "suggested_private".into(),
             evidence_quote: "パクる".into(), content_hint: Some("日語單字".into()),
-            uncertainty: None, intent_candidate: None, model_id: "gemma-4-E2B-it".into(),
+            uncertainty: None, intent_candidate: None, pending_question: None,
+            model_id: "gemma-4-E2B-it".into(),
             runtime: "litert-lm-android-0.16.1".into(), backend: "cpu".into(),
             elapsed_ms: 12, updated_at_ms: 0,
         };
