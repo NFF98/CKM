@@ -71,6 +71,14 @@ pub struct OcrRecord {
     pub updated_at_ms: Option<i64>,
 }
 
+/// B09: only a private, evidence-versioned question, not a Goal or matching Concept.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingIntentQuestion {
+    pub ordinal: i64,
+    pub text: String,
+}
+
 /// US-01A: an unconfirmed, private suggestion. It is neither a Goal event nor Consent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -89,6 +97,7 @@ pub struct ModelSuggestion {
     pub content_hint: Option<String>,
     pub uncertainty: Option<String>,
     pub intent_candidate: Option<PrivateIntentCandidate>,
+    pub pending_question: Option<PendingIntentQuestion>,
     pub model_id: String,
     pub runtime: String,
     pub backend: String,
@@ -104,6 +113,8 @@ struct RawSuggestion {
     content_hint: Option<String>,
     uncertainty: Option<String>,
     intent_candidate: Option<PrivateIntentCandidate>,
+    #[serde(default)]
+    clarifying_question: Option<String>,
 }
 
 /// Rust deliberately requires first-person collaborative intent evidence before offering
@@ -132,7 +143,7 @@ fn source_quote(source: &str) -> String {
 fn parse_private_model_reply(
     original: &str,
     reply: &str,
-) -> Result<(String, Option<String>, Option<String>, Option<PrivateIntentCandidate>), String> {
+) -> Result<(String, Option<String>, Option<String>, Option<PrivateIntentCandidate>, Option<String>), String> {
     let text = reply.trim().trim_start_matches('\u{feff}').trim();
     if text.is_empty() || text.len() > 8192 {
         return Err(store_error("MODEL_OUTPUT_FORMAT"));
@@ -171,6 +182,7 @@ fn parse_private_model_reply(
                 content_hint: Some(body.to_owned()),
                 uncertainty: Some("模型回覆為一般文字，尚未結構化；請自行核對。".into()),
                 intent_candidate: None,
+                clarifying_question: None,
             }
         }
     };
@@ -243,7 +255,17 @@ fn parse_private_model_reply(
             evidence_quote: source_quote(original),
         })
     };
-    Ok((quote, raw.content_hint, raw.uncertainty, intent_candidate))
+    let question = match raw.clarifying_question {
+        Some(value) if intent_candidate.is_none() => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() || trimmed.chars().count() > 160 ||
+               trimmed.len() > 512 || trimmed.chars().any(|ch| ch.is_control())
+            { return Err(store_error("B09_INVALID_QUESTION")); }
+            Some(trimmed.to_owned())
+        }
+        _ => None,
+    };
+    Ok((quote, raw.content_hint, raw.uncertainty, intent_candidate, question))
 }
 
 pub struct LocalStore {
@@ -347,6 +369,23 @@ impl LocalStore {
                state TEXT NOT NULL DEFAULT 'suggested_private'
                  CHECK(state='suggested_private')
              );
+             CREATE TABLE IF NOT EXISTS local_intent_questions (
+                asset_id TEXT NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
+                base_source_sha256 TEXT NOT NULL CHECK(length(base_source_sha256)=64),
+                ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 1 AND 2),
+                question TEXT NOT NULL CHECK(length(trim(question)) > 0
+                                                AND length(question) <= 512),
+                answer TEXT CHECK(answer IS NULL OR
+                                 (length(trim(answer)) > 0 AND length(answer) <= 2048)),
+                issued_at_ms INTEGER NOT NULL,
+                answered_at_ms INTEGER,
+                PRIMARY KEY(asset_id,base_source_sha256,ordinal),
+                CHECK((answer IS NULL AND answered_at_ms IS NULL) OR
+                      (answer IS NOT NULL AND answered_at_ms IS NOT NULL))
+             );
+             CREATE UNIQUE INDEX IF NOT EXISTS b09_one_pending_question
+               ON local_intent_questions(asset_id,base_source_sha256)
+               WHERE answer IS NULL;
              CREATE TABLE IF NOT EXISTS local_model_suggestions (
                asset_id TEXT PRIMARY KEY NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
                status TEXT NOT NULL CHECK(status='suggested_private'),
@@ -704,33 +743,84 @@ impl LocalStore {
     }
 
 
-    /// Rust-only: load trusted app-private text (or local OCR / user correction).
-    pub fn model_input_for_asset(&self, id: &str) -> Result<String, String> {
-        let uuid = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
-        let conn = self.connect()?;
+    /// A single source of truth for text and image/OCR input, always read from
+    /// the same SQLite connection (also under the inference commit transaction).
+    fn base_source(conn: &Connection, id: &str) -> Result<String, String> {
         let row: Option<(String, Option<String>)> = conn.query_row(
             "SELECT kind,text_content FROM local_assets WHERE id=?1",
-            params![uuid], |row| Ok((row.get(0)?, row.get(1)?)),
+            params![id], |row| Ok((row.get(0)?, row.get(1)?)),
         ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
         let (kind, text) = row.ok_or_else(|| store_error("ASSET_NOT_FOUND"))?;
         let raw = match kind.as_str() {
             "text" => text.unwrap_or_default(),
-            "image" => {
-                let ocr = self.load_ocr(&uuid)?;
-                ocr.corrected_text.filter(|v| !v.trim().is_empty())
-                    .or_else(|| ocr.raw_text.filter(|v| !v.trim().is_empty()))
-                    .ok_or_else(|| store_error("MODEL_INPUT_UNKNOWN"))?
-            }
+            "image" => conn.query_row(
+                "SELECT coalesce(nullif(trim(corrected_text),''),nullif(trim(raw_text),''),'')
+                 FROM local_ocr WHERE asset_id=?1",
+                params![id], |row| row.get::<_, String>(0),
+            ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?
+                .unwrap_or_default(),
             _ => return Err(store_error("MODEL_INPUT_UNKNOWN")),
         };
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return Err(store_error("MODEL_INPUT_UNKNOWN"));
-        }
-        if trimmed.len() > 8192 {
-            return Err(store_error("MODEL_INPUT_TOO_LARGE"));
-        }
+        let trimmed=raw.trim();
+        if trimmed.is_empty() { return Err(store_error("MODEL_INPUT_UNKNOWN")); }
         Ok(trimmed.to_owned())
+    }
+
+    /// Only the PERSON'S answers (not AI-written questions) are added to model
+    /// evidence; no model question is allowed to manufacture user collaboration.
+    fn with_user_answers(conn: &Connection, id: &str, base: &str) -> Result<String, String> {
+        let base_sha=format!("{:x}",Sha256::digest(base.as_bytes()));
+        let mut stmt=conn.prepare(
+            "SELECT answer FROM local_intent_questions
+             WHERE asset_id=?1 AND base_source_sha256=?2 AND answer IS NOT NULL
+             ORDER BY ordinal"
+        ).map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        let responses=stmt.query_map(params![id,base_sha],|row|row.get::<_,String>(0))
+            .map_err(|_| store_error("DATABASE_READ_FAILED"))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        let mut input=base.to_owned();
+        for answer in responses {
+            input.push_str("\n\n【本人補充（非模型推測）】\n");
+            input.push_str(&answer);
+        }
+        if input.len()>8192 { return Err(store_error("MODEL_INPUT_TOO_LARGE")); }
+        Ok(input)
+    }
+
+    /// B02 text and B03 OCR + any answer converge on this ONE Gemma input path.
+    pub fn model_input_for_asset(&self, id: &str) -> Result<String, String> {
+        let uuid=Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        let conn=self.connect()?;
+        let base=Self::base_source(&conn,&uuid)?;
+        Self::with_user_answers(&conn,&uuid,&base)
+    }
+
+    /// Person must answer the current source-backed question. One question at a
+    /// time, max TWO clarifications; the separate Goal confirmation is question 3.
+    pub fn answer_intent_question(&self, id: &str, ordinal: i64, answer: &str)
+        -> Result<(), String>
+    {
+        let uuid=Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        let value=answer.trim();
+        if !(1..=2).contains(&ordinal) || value.is_empty() ||
+            value.len()>2048 || value.chars().count()>500 ||
+            value.chars().any(|ch| ch.is_control() && ch!='\n')
+        { return Err(store_error("B09_INVALID_ANSWER")); }
+        let mut conn=self.connect()?;
+        let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| store_error("DATABASE_BUSY"))?;
+        let base=Self::base_source(&tx,&uuid)?;
+        let source_sha=format!("{:x}",Sha256::digest(base.as_bytes()));
+        let affected=tx.execute(
+            "UPDATE local_intent_questions SET answer=?1, answered_at_ms=?2
+             WHERE asset_id=?3 AND base_source_sha256=?4 AND ordinal=?5
+               AND answer IS NULL",
+            params![value,clock_ms()?,uuid,source_sha,ordinal],
+        ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        if affected!=1 { return Err(store_error("B09_QUESTION_STALE")); }
+        tx.commit().map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        Ok(())
     }
 
     /// Model output never confirms a Goal/Need/Offer. Reject unknown JSON keys and
@@ -747,28 +837,17 @@ impl LocalStore {
         {
             return Err(store_error("MODEL_INVALID_OUTPUT"));
         }
-        let (quote, content_hint, uncertainty, intent_candidate) =
+        let (quote, content_hint, uncertainty, intent_candidate, clarifying_question) =
             parse_private_model_reply(original_input, &native.raw_text)?;
         let sha = format!("{:x}", Sha256::digest(original_input.as_bytes()));
         let now = clock_ms()?;
         let mut conn = self.connect()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| store_error("DATABASE_BUSY"))?;
-        // Check latest source under the SQLite write lock to reject stale model replies.
-        let row: Option<(String, Option<String>)> = tx.query_row(
-            "SELECT kind, text_content FROM local_assets WHERE id=?1",
-            params![uuid], |row| Ok((row.get(0)?, row.get(1)?)),
-        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
-        let current = match row {
-            Some((kind, text)) if kind == "text" => text.unwrap_or_default().trim().to_owned(),
-            Some((kind, _)) if kind == "image" => tx.query_row(
-                "SELECT coalesce(nullif(trim(corrected_text),''),nullif(trim(raw_text),''),'')
-                 FROM local_ocr WHERE asset_id=?1",
-                params![uuid], |row| row.get::<_, String>(0),
-            ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?
-                .unwrap_or_default(),
-            _ => return Err(store_error("ASSET_NOT_FOUND")),
-        };
+        // Recompute base+answered context in the SAME write transaction.
+        // OCR correction/source deletion invalidates old questions and model results.
+        let current_base=Self::base_source(&tx,&uuid)?;
+        let current=Self::with_user_answers(&tx,&uuid,&current_base)?;
         if current != original_input {
             return Err(store_error("MODEL_STALE_INPUT"));
         }
@@ -804,6 +883,24 @@ impl LocalStore {
                 params![uuid, sha, json],
             ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
         }
+        if let Some(ref question)=clarifying_question {
+            let base_sha=format!("{:x}",Sha256::digest(current_base.as_bytes()));
+            let (asked,pending,repeat):(i64,i64,i64)=tx.query_row(
+                "SELECT count(*),coalesce(sum(CASE WHEN answer IS NULL THEN 1 ELSE 0 END),0),
+                        coalesce(sum(CASE WHEN question=?3 THEN 1 ELSE 0 END),0)
+                 FROM local_intent_questions
+                 WHERE asset_id=?1 AND base_source_sha256=?2",
+                params![uuid,base_sha,question],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+            ).map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+            if intent_candidate.is_none() && pending==0 && repeat==0 && asked<2 {
+                tx.execute(
+                    "INSERT INTO local_intent_questions
+                     (asset_id,base_source_sha256,ordinal,question,answer,issued_at_ms)
+                     VALUES (?1,?2,?3,?4,NULL,?5)",
+                    params![uuid,base_sha,asked+1,question,now],
+                ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+            }
+        }
         tx.commit().map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
         self.load_model_suggestion(&uuid)?
             .ok_or_else(|| store_error("DATABASE_READ_FAILED"))
@@ -815,15 +912,19 @@ impl LocalStore {
         let input = self.model_input_for_asset(&uuid)?;
         let sha = format!("{:x}", Sha256::digest(input.as_bytes()));
         let conn = self.connect()?;
+        let base=Self::base_source(&conn,&uuid)?;
+        let base_sha=format!("{:x}",Sha256::digest(base.as_bytes()));
         conn.query_row(
             "SELECT s.asset_id,s.status,s.evidence_quote,s.content_hint,s.uncertainty,
                     s.model_id,s.runtime,s.backend,s.elapsed_ms,s.updated_at_ms,
-                    i.candidate_json
+                    i.candidate_json,q.ordinal,q.question
              FROM local_model_suggestions s
              LEFT JOIN local_intent_candidates i ON i.asset_id=s.asset_id
                AND i.source_sha256=s.source_sha256
+             LEFT JOIN local_intent_questions q ON q.asset_id=s.asset_id
+               AND q.base_source_sha256=?3 AND q.answer IS NULL
              WHERE s.asset_id=?1 AND s.source_sha256=?2",
-            params![uuid, sha],
+            params![uuid, sha,base_sha],
             |row| {
                 let json: Option<String> = row.get(10)?;
                 let candidate = json.map(|v| serde_json::from_str::<PrivateIntentCandidate>(&v))
@@ -832,6 +933,11 @@ impl LocalStore {
                     asset_id: row.get(0)?, status: row.get(1)?,
                     evidence_quote: row.get(2)?, content_hint: row.get(3)?,
                     uncertainty: row.get(4)?, intent_candidate: candidate,
+                    pending_question: row.get::<_,Option<i64>>(11)?.map(|ordinal|
+                        PendingIntentQuestion {
+                            ordinal,
+                            text: row.get::<_,String>(12).unwrap_or_default(),
+                        }),
                     model_id: row.get(5)?, runtime: row.get(6)?, backend: row.get(7)?,
                     elapsed_ms: row.get::<_, i64>(8)?.max(0) as u64,
                     updated_at_ms: row.get(9)?,
