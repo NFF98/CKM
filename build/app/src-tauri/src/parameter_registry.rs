@@ -289,6 +289,13 @@ impl ParameterStore {
                    AND p.share_consent=0 AND p.visibility='private'
                    AND p.goal_revision=NEW.goal_revision AND g.revision=NEW.goal_revision
                    AND e.parameter_id=p.id AND e.version=p.version
+                   AND NOT EXISTS (
+                      SELECT 1 FROM local_goal_lifecycle l
+                      WHERE l.draft_id=p.draft_id
+                        AND (l.state='cancelled_private' OR
+                        (l.expires_at_ms IS NOT NULL AND
+                         l.expires_at_ms<=CAST(strftime('%s','now') AS INTEGER)*1000))
+                   )
                    AND (p.expires_at_ms IS NULL
                         OR p.expires_at_ms > CAST(strftime('%s','now') AS INTEGER)*1000)
                ) THEN RAISE(ABORT,'B06_UNVERIFIED_SLOT') END;
@@ -303,7 +310,16 @@ impl ParameterStore {
              BEGIN DELETE FROM local_matching_slots WHERE parameter_id=NEW.id; END;
              CREATE TRIGGER IF NOT EXISTS b06_reset_slots_after_goal_revision
              AFTER UPDATE OF revision ON local_goal_drafts
-             BEGIN DELETE FROM local_matching_slots WHERE draft_id=NEW.id; END;"
+             BEGIN DELETE FROM local_matching_slots WHERE draft_id=NEW.id; END;
+             CREATE TRIGGER IF NOT EXISTS b06_reset_slots_after_lifecycle_insert
+             AFTER INSERT ON local_goal_lifecycle
+             WHEN NEW.state!='active_private'
+               OR (NEW.expires_at_ms IS NOT NULL AND
+                   NEW.expires_at_ms<=CAST(strftime('%s','now') AS INTEGER)*1000)
+             BEGIN DELETE FROM local_matching_slots WHERE draft_id=NEW.draft_id; END;
+             CREATE TRIGGER IF NOT EXISTS b06_reset_slots_after_lifecycle_change
+             AFTER UPDATE OF state,expires_at_ms ON local_goal_lifecycle
+             BEGIN DELETE FROM local_matching_slots WHERE draft_id=NEW.draft_id; END;"
         ).map_err(|_| err("DATABASE_MIGRATION_FAILED"))?;
         Ok(store)
     }
@@ -318,9 +334,13 @@ impl ParameterStore {
 
     fn goal_revision(conn: &Connection, draft_id: &str) -> Result<i64, String> {
         conn.query_row(
-            "SELECT revision FROM local_goal_drafts
-             WHERE id=?1 AND intent_state='draft_private' AND visibility='private'
-               AND share_consent=0",
+            "SELECT g.revision FROM local_goal_drafts g
+             LEFT JOIN local_goal_lifecycle l ON l.draft_id=g.id
+             WHERE g.id=?1 AND g.intent_state='draft_private' AND
+               g.visibility='private' AND g.share_consent=0
+               AND (l.state IS NULL OR l.state='active_private')
+               AND (l.expires_at_ms IS NULL OR
+                    l.expires_at_ms>CAST(strftime('%s','now') AS INTEGER)*1000)",
             params![draft_id], |row| row.get(0),
         ).optional().map_err(|_| err("DATABASE_READ_FAILED"))?
             .ok_or_else(|| err("GOAL_CONFIRMATION_REQUIRED"))
@@ -357,13 +377,17 @@ impl ParameterStore {
                     p.share_consent,p.confirmed_event_id,p.registry_version,
                     p.goal_revision,p.version,p.created_at_ms,p.updated_at_ms,
                     g.revision,
-                    CASE WHEN p.expires_at_ms IS NOT NULL AND
-                       p.expires_at_ms <= CAST(strftime('%s','now') AS INTEGER)*1000
+                    CASE WHEN (p.expires_at_ms IS NOT NULL AND
+                       p.expires_at_ms <= CAST(strftime('%s','now') AS INTEGER)*1000)
+                       OR l.state='cancelled_private'
+                       OR (l.expires_at_ms IS NOT NULL AND
+                           l.expires_at_ms<=CAST(strftime('%s','now') AS INTEGER)*1000)
                        THEN NULL ELSE s.slot_index END
              FROM local_parameter_drafts p
              JOIN local_goal_drafts g ON g.id=p.draft_id
              LEFT JOIN local_matching_slots s ON s.parameter_id=p.id
                AND s.goal_revision=g.revision
+             LEFT JOIN local_goal_lifecycle l ON l.draft_id=g.id
              WHERE p.draft_id=?1 ORDER BY p.updated_at_ms DESC,p.id DESC"
         ).map_err(|_| err("DATABASE_READ_FAILED"))?;
         let items = stmt.query_map(params![draft_id], Self::from_row)
