@@ -1749,4 +1749,77 @@ mod tests {
             model_reply(r#"{"contentHint":"過期"}"#)).unwrap_err(),"MODEL_STALE_INPUT");
     }
 
+    #[test]
+    fn us01_multiple_private_hypotheses_evidence_checked_and_sqlite_legacy_compatible() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let input="我想找人一起練 JLPT N2 口說，也想找人交換文法題目";
+        let asset=store.save(text_drop(input)).unwrap();
+        let result=store.save_model_suggestion(&asset.id,input,model_reply(
+            r#"{"evidenceQuote":"我想找人一起練",
+                "contentHint":"日語合作",
+                "intentCandidates":[
+                  {"domain":"study","goalText":"找人一起練 N2 口說",
+                   "evidenceQuote":"我想找人一起練"},
+                  {"domain":"study","goalText":"找人交換 N2 文法題",
+                   "evidenceQuote":"想找人交換文法題目"}
+                ]}"#,
+        )).unwrap();
+        assert_eq!(result.intent_candidates.len(),2);
+        assert_eq!(result.intent_candidate.as_ref().unwrap(),&result.intent_candidates[0]);
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&asset.id).unwrap().is_none(),"multiple AI hypotheses cannot confirm Goal");
+        assert_eq!(store.load_model_suggestion(&asset.id).unwrap()
+            .unwrap().intent_candidates.len(),2);
+        // Previously installed PR#16 Android stored a single candidate JSON object,
+        // not an array. A schema upgrade must still read it without data loss.
+        let prior=serde_json::to_string(&result.intent_candidates[0]).unwrap();
+        store.connect().unwrap().execute(
+            "UPDATE local_intent_candidates SET candidate_json=?1 WHERE asset_id=?2",
+            params![prior,asset.id],
+        ).unwrap();
+        let old=store.load_model_suggestion(&asset.id).unwrap().unwrap();
+        assert_eq!(old.intent_candidates.len(),1);
+        assert_eq!(old.intent_candidate.unwrap().goal_text,"找人一起練 N2 口說");
+    }
+
+    #[test]
+    fn us01_no_goal_provenance_cannot_generate_any_private_hypotheses() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let input="時裝設計をパクる　BMW E46 改裝參考";
+        let asset=store.save(text_drop(input)).unwrap();
+        let response=store.save_model_suggestion(&asset.id,input,model_reply(
+            r#"{"contentHint":"時裝／汽車不同主題",
+                "intentCandidates":[
+                  {"domain":"study","goalText":"找 N2 學伴",
+                   "evidenceQuote":"パクる"},
+                  {"domain":"car","goalText":"找汽車技師",
+                   "evidenceQuote":"BMW E46"}]}"#,
+        )).unwrap();
+        assert!(response.intent_candidate.is_none());
+        assert!(response.intent_candidates.is_empty());
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&asset.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn us01_multi_candidates_reject_forged_model_confirmation_and_large_set() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let input="我想找人一起練 JLPT N2";
+        let asset=store.save(text_drop(input)).unwrap();
+        assert_eq!(store.save_model_suggestion(&asset.id,input,model_reply(
+            r#"{"intentCandidates":[
+                {"domain":"study","goalText":"N2","evidenceQuote":"我想找人","confirmed":true}]}"#
+        )).unwrap_err(),"MODEL_OUTPUT_FORMAT");
+        let items=vec![
+            serde_json::json!({"domain":"study","goalText":"a","evidenceQuote":"我想找人"});
+            4
+        ];
+        let raw=serde_json::json!({"contentHint":"N2","intentCandidates":items}).to_string();
+        assert_eq!(store.save_model_suggestion(&asset.id,input,model_reply(&raw))
+            .unwrap_err(),"MODEL_OUTPUT_UNAPPROVED_FIELDS");
+    }
+
 }
