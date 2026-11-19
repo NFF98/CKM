@@ -1,11 +1,11 @@
 # CAKAMI｜Phase 1 MVP 建置待辦總表（Build Backlog）
 
-**狀態：規劃中；尚未開始實作**  
-**更新日期：2026-11-17**  
+**狀態：B01–B05 已有 Coding／部分真機 Evidence，US-01 端到端產品測試 NG；其餘依 [實際進度](sprints/SPRINT-01_PROGRESS.md) 為準**  
+**計畫更新日期：2026-11-19**  
 **MVP 市場：18 歲以上 JLPT N2 學習者；Android 優先；S01–S09，以及 S04a 無候選人的分支**  
 **語言原則：[CKM 繁體中文溝通規範](../communication/COMMUNICATION_RULES.md)**
 
-> **此文件是唯一的建置工作待辦總表。** 使用者已確認以 [三個 Sprint](SPRINT_PLAN.md) 分組執行；[B01–B21 ↔ 四份 Spec ↔ 驗收追溯表](TRACEABILITY.md) 另列。**Sprint 不能改變本表功能與依賴**；此文件不預設工期，也不宣稱任何功能已完成。
+> **此文件是 B01–B21 唯一工程任務目錄，不是產品交付順序。** 2026-11-19 起 [三個 Sprint 改為 User Story First](SPRINT_PLAN.md)：先定義 US-01／02／03 使用者完整成果，跨相應 BXX 實作／測試。BXX 原編號、工程責任、依賴、安全紅線及正式 Test IDs 保留；一個 BXX CI PASS 不表示任何 User Story PASS。
 
 ## 一、設計依據與產品邊界
 
@@ -33,10 +33,22 @@
 - **安全與同意**：第一階段只服務 18 歲以上；公開 Intent 須明示同意；雙方接受後才開放聊天；須支援封鎖、檢舉、撤銷及過期。
 - **MVP 不做**：地圖與位置追蹤（Phase 2）、Travel Match（Phase 3）、餐廳訂位、供應鏈整合或完整遊戲養成。
 
+## 開發交付改為 User Story（2026-11-19，使用者決策）
+
+**US-01（Sprint 1 / 當前 NG，先修）：** 用戶輸入純文字或 Drop 圖片 → 本地理解 → 可能意圖（或 UNKNOWN）→ 少量必要追問 → 本人確認 Goal／合法參數 → 本地 SQLite 持久化。工程跨 **B02–B06、B09**，加上 B01 Bridge、B07 生命周期與 B08 本地分享預覽。**現在不是完成 B06，而是先完成 US-01A「純文字→候選→本人確認」並實測。**
+
+**US-02（Sprint 2 / NOT_RUN）：** 確認 Intent → B08 本人同意 → B10–B12 合法最小同步 → B13–B15 真 Cloud Same Goal／Need↔Offer＋硬條件、候選／無候選。不得把 CI／SQL mock 當真人候選。
+
+**US-03（Sprint 2 / NOT_RUN）：** B16 雙方邀請接受 → B17 Chat／15 分鐘 → B18 雙方確認可信結果 → 經授權的本人 Outcome 回本地 SQLite。跨使用者的聚合回饋尚待資料用途與同意決策，不能自動納入 MVP。
+
+**B19／B21（Sprint 3）**：完整 US-01～03 和原 T01–T13／E2E-01～05 安全真機/真 Cloud PASS 方能 Pilot。B20 仍是 P1。每條 Story 的具體 Gate 以 [新 Sprint Plan](SPRINT_PLAN.md)、[Acceptance Spec](../test/ACCEPTANCE_SPEC.md) 為準。
+
+**BXX 仍有不可跳過的安全先後依賴**，但實作應以同一 User Story 的前端 → AI → Rust → SQLite／Server 真狀態作一組整合，不再讓「B03 詞義解釋 PASS、B04 手填 PASS、B05 Registry PASS」冒充 US-01 PASS。P1 只上線 JLPT N2；Fashion/Car 用來驗證通用 Core 不誤分類，未批准不得雲端發布。
+
 ## 二、功能式建置待辦（依賴排序；Sprint 分組另見計畫）
 
 優先級：**P0**＝MVP 必須完成；**P1**＝驗證品質優化。  
-進度：所有項目皆為 **未開始**；只有附上測試或驗收證據後才能標記完成。
+進度以 [Sprint 1 實際 Coding／真機紀錄](sprints/SPRINT-01_PROGRESS.md) 為準：B01–B05 已有部分 Coding，B03→B04 Action Intelligence 真機 **FAIL/NG**；B06–B09 尚未開始。其他 BXX 不以「表格預設未開始」覆蓋真實證據。
 
 | ID | 優先 | 功能交付內容 | 畫面 | 依賴 | 主要驗收條件 |
 |---|---|---|---|---|---|
