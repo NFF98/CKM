@@ -74,6 +74,21 @@
 
 **發版阻斷（SOURCE）**：正常 APK 更新不應不必要重下 2.59 GB；如發佈新模型則必須先下載＋校驗＋啟用成功才可刪舊模型；任何失敗都保持舊模型可用。不許把尚未實作的 B21-M1/M2 標 PASS。
 
+### Action Intelligence Core 泛用化（User 2026-11-19 需求；PROPOSED，尚未實作）
+
+**不是把 Study 改成 Fashion/Car MVP**。P1 仍只開放 N2 真人學伴；但 B02～B05 的 AI 引擎不得將所有內容硬分類為日語學習，通用 Core 要能保留非 Study 的 PRIVATE／UNKNOWN，且新領域只有正式批准的 Domain Pack 才能開放 Cloud Match。對應 [Universal Intent Engine Design](../design/ACTION_INTELLIGENCE_ARCHITECTURE_v1_DRAFT.md) 與 [AI-INTENT-01～12](../test/ACCEPTANCE_SPEC.md)。
+
+| 子項 | 擬議優先 | 設計交付／實作責任 | 不得假裝已完成的地方 |
+|---|---|---|---|
+| B03-U1 | P0（P1 正確性） | B03 OCR／Gemma 抽取有來源的 ContentFact、多候選 Domain/Intent/UNKNOWN；與 B04 安全分離 | 現有僅 `contentHint`；不會判斷不同域；僅 OCR 文字輸入 Gemma，無原圖視覺理解 |
+| B04-U1 | P0（P1 首次價值） | Rust + SQLite 用已確認私有 Context 排序私人 Goal 候選；本人選擇、編輯、確認才建立 Goal，低證據時只收藏／少問 | 現有空白文字 Goal 輸入，不會使用 B03 結果 |
+| B05-U1 | P0（P1 正確性） | 由已確認 Goal 提出合法 Parameter 候選；Registry 未核准概念維持 UNKNOWN；與可執行 Action Capability Registry 分離 | 現有只認 N2，同義別名；無智能 Need/Offer/時間抽取 |
+| B13-U1 | P1（後續領域擴張） | Cloud 共用 Goal/Need↔Offer/可行性與 Domain Pack 版本化規則；每個新域先完成安全、Consent、測試 | P1 Cloud 只允許 N2 Study；不把相似文字當互補需求 |
+| B18-U1 | P1（成果閉環） | 經 Server 驗證且授權可見的 OutcomeReceipt 回本地 SQLite，改善下次本地選擇，跨人結果利用另需同意 | 目前尚未建 B10～B18；不得由 UI 點擊算完成 |
+| B03-V1 | P1／後續跨域視覺 Gate | 評估經批准的 On-device Vision Adapter：真正圖片像素理解 Fashion/Car 且離線、隱私、手機效能可用 | **OCR-only 不能算看懂服裝或車輛**；尚無此模型接口 |
+
+**次序：** 先驗 AI-INTENT-01～11（包含歧義和跨域負例），修 B03→B04→B05 再續 B06；Cloud 循環需 B08/B10～B18 的合法依賴，AI-INTENT-12 需真 Server Outcome Evidence。此表為設計需求提案，未有 User 核准的具體 Domain Pack、Cloud 欄位白名單或資料使用規則不得先行實作。
+
 ## 三、建置依賴流程
 
 ```text
