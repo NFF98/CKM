@@ -13,6 +13,24 @@
 - **追加測試 AI-LOCAL-03（B11–B13／B19）**：Cloud API／Supabase 僅處理已授權 Payload、資料庫查詢／向量距離／邀請與聊天，不在 Server 或 Edge Function 呼叫模型推論；本地產生的 Embedding 若要上傳，必須有明確 Consent。
 - 以上測試目前均為 **NOT_RUN**，不宣稱模型已在 Android 驗證。
 
+## B03／B21 模型更新生命週期驗收（User 已核准產品規則，2026-11-19）
+
+**以下新測試均為 NOT_RUN；新增設計不等於完成新版更新器。** 以 Android 真機 + App-private 模型檔 + 網路／儲存故障注入為準。
+
+| ID | 操作／故障注入 | 必須驗收 |
+|---|---|---|
+| AI-MODEL-01 | Gemma 模型已完成 2.59 GB 下載，安裝同簽章／同 applicationId 的新 APK（只改 UI／Rust／Prompt） | 模型版本與 SHA 不變、不觸發 2.59 GB 重下載、私人 SQLite 資料保留；飛航模式仍可推論 |
+| AI-MODEL-02 | 發佈新模型版本，有 Wi-Fi／無 Wi-Fi 各測一次 | 有版本說明／大小和可稍後更新的選項；無 Wi-Fi 或暫時拒絕時舊版正常離線運作，不強迫重下載 |
+| AI-MODEL-03 | 新版下載中斷、App 中止、重啟或 CDN 不可用 | 舊版不被刪除；可從有效部分續傳或安全重試，不能把殘檔當已安裝 |
+| AI-MODEL-04 | 新模型檔 SHA 錯誤、來源異常、Manifest 不受信任／不相容 | 新模型拒絕啟用；舊模型與資料不變；錯誤可辨識，沒有遠端 AI fallback |
+| AI-MODEL-05 | 新版本完整下載且校驗通過，但 LiteRT-LM 載入失敗或最小推論失敗 | 回退舊版仍可使用；不能把下載完成或 SHA 驗證當成推論 PASS |
+| AI-MODEL-06 | 模擬新舊兩模型同時保留時手機剩餘空間不足；切換中途 crash | 不刪舊版以騰空間；重啟後仍能辨識並使用最後成功的版本，無破損啟用指標 |
+| AI-MODEL-07 | 新模型啟用及本地 Smoke Test 成功 | 才可標示已升級、按政策安全回收舊版；記錄 modelId、modelVersion、hash、runtime 與切換／回退證據 |
+| AI-MODEL-08 | 解除安裝 App 後重新安裝（負例） | UI／文件必須警示 App-private 模型通常遺失；不可把此情況算成「APK 更新造成重下載」Bug |
+| AI-MODEL-09 | Rust Bridge、模型已下載、模型推論三狀態交叉驗證 | 狀態互不假冒：模型校驗通過不等於推論已通過；更新失敗不顯示為 Rust 連線失敗 |
+
+**Gate：** B03-M1 與 B21-M1 的 P0 驗收需要上列必測情境的可重現真機 Evidence；尚未實作／尚未測到時一律 NOT_RUN。規格依 [Technical](../design/TECHNICAL_SPEC.md)／[Backlog](../build/BACKLOG.md)。
+
 ## 1. Done 的唯一判準
 
 每個 B-ID 須同時具備：
