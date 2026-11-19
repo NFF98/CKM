@@ -68,8 +68,8 @@ class CakamiModelPlugin(private val activity: Activity): Plugin(activity) {
 
     private fun verifiedModel(): Boolean {
         return Build.VERSION.SDK_INT >= 26 &&
-            model.isFile && model.length() in MIN_SIZE..MAX_SIZE &&
-            checksum.isFile && checksum.readText().trim() == SHA256
+            ModelReusePolicy.decide(model, checksum, ModelAutoDownloader.GEMMA_SIZE, SHA256) ==
+                ModelBootAction.USE_INSTALLED
     }
 
     private fun statusJson(): JSObject {
@@ -107,7 +107,7 @@ class CakamiModelPlugin(private val activity: Activity): Plugin(activity) {
     fun prepareModel(invoke: Invoke) {
         try {
             val args = invoke.parseArgs(PrepareModelArgs::class.java)
-            autoDownloader.prepare(args.allowMetered, verifiedModel())
+            autoDownloader.prepare(args.allowMetered)
             invoke.resolve(statusJson())
         } catch (_: Exception) {
             invoke.reject("MODEL_DOWNLOAD_FAILED")
