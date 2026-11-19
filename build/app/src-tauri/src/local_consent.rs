@@ -32,7 +32,7 @@ pub struct LocalShareReview {
     pub scope: &'static str,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 pub struct ReviewInput {
     pub asset_id: String,
@@ -187,11 +187,12 @@ impl LocalConsentStore {
                 }
             }
         }
+        let reviewable=snapshot.allowed();
         Ok(LocalShareReview {
             draft_id:snapshot.draft_id,
             goal_revision:snapshot.goal_revision,
             lifecycle_version:snapshot.lifecycle_version,
-            reviewable_field_ids:snapshot.allowed(),
+            reviewable_field_ids:reviewable,
             selected_field_ids:selected,
             consent_recorded:recorded,
             consent_version:version,
@@ -383,7 +384,7 @@ mod tests {
         let invalid=store.load(&asset).unwrap();
         assert!(!invalid.consent_recorded);
         let mut stale=action(&asset,1,&["goal_text"],"approve_local_preview");
-        assert_eq!(store.review(stale).unwrap_err(),"B08_STALE_REVIEW");
+        assert_eq!(store.review(stale.clone()).unwrap_err(),"B08_STALE_REVIEW");
         stale.expected_goal_revision=2;
         store.review(stale).unwrap();
         assert!(store.load(&asset).unwrap().consent_recorded);
