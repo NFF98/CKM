@@ -158,6 +158,14 @@ async fn local_model_propose(app: tauri::AppHandle, id: String) -> Result<local_
     }).await.map_err(|_| "MODEL_INFERENCE_FAILED".to_string())?
 }
 
+/// B09: explicit user's private response to one pending source-versioned question.
+#[tauri::command]
+fn answer_intent_question(
+    app: tauri::AppHandle, asset_id: String, ordinal: i64, answer: String,
+) -> Result<(), String> {
+    private_store(&app)?.answer_intent_question(&asset_id, ordinal, &answer)
+}
+
 #[tauri::command]
 fn load_model_suggestion(app: tauri::AppHandle, id: String) -> Result<Option<local_store::ModelSuggestion>, String> {
     private_store(&app)?.load_model_suggestion(&id)
@@ -247,6 +255,7 @@ pub fn run() {
             import_local_model,
             local_model_propose,
             load_model_suggestion,
+            answer_intent_question,
             load_private_goal_draft,
             confirm_private_goal,
             list_concept_registry,
