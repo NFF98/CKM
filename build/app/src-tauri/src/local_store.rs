@@ -97,6 +97,7 @@ pub struct ModelSuggestion {
     pub content_hint: Option<String>,
     pub uncertainty: Option<String>,
     pub intent_candidate: Option<PrivateIntentCandidate>,
+    pub intent_candidates: Vec<PrivateIntentCandidate>,
     pub pending_question: Option<PendingIntentQuestion>,
     pub model_id: String,
     pub runtime: String,
@@ -113,6 +114,8 @@ struct RawSuggestion {
     content_hint: Option<String>,
     uncertainty: Option<String>,
     intent_candidate: Option<PrivateIntentCandidate>,
+    #[serde(default)]
+    intent_candidates: Option<Vec<PrivateIntentCandidate>>,
     #[serde(default)]
     clarifying_question: Option<String>,
 }
@@ -143,7 +146,7 @@ fn source_quote(source: &str) -> String {
 fn parse_private_model_reply(
     original: &str,
     reply: &str,
-) -> Result<(String, Option<String>, Option<String>, Option<PrivateIntentCandidate>, Option<String>), String> {
+) -> Result<(String, Option<String>, Option<String>, Option<PrivateIntentCandidate>, Option<String>, Vec<PrivateIntentCandidate>), String> {
     let text = reply.trim().trim_start_matches('\u{feff}').trim();
     if text.is_empty() || text.len() > 8192 {
         return Err(store_error("MODEL_OUTPUT_FORMAT"));
@@ -182,6 +185,7 @@ fn parse_private_model_reply(
                 content_hint: Some(body.to_owned()),
                 uncertainty: Some("模型回覆為一般文字，尚未結構化；請自行核對。".into()),
                 intent_candidate: None,
+                intent_candidates: None,
                 clarifying_question: None,
             }
         }
@@ -216,45 +220,49 @@ fn parse_private_model_reply(
     let can_suggest = explicit_collaboration_intent(original)
         && original.chars().count() <= 500
         && original.len() <= 2048;
-    let intent_candidate = if !can_suggest {
-        None
-    } else if let Some(candidate) = raw.intent_candidate {
-        let evidence = candidate.evidence_quote.trim();
-        let domain = candidate.domain.as_str();
-        if candidate.goal_text.trim().is_empty()
-            || candidate.goal_text.chars().count() > 500
-            || candidate.goal_text.len() > 2048
-            || evidence.is_empty()
-            || evidence.chars().count() > 80
-            || !original.contains(evidence)
-            || !matches!(domain, "study" | "fashion" | "car" | "other" | "unknown")
-        {
-            // Discard the AI-written goal when its evidence is wrong, but preserve
-            // the person's own explicit text as an editable private candidate.
-            // This cannot invent intent: it quotes only the user's actual source.
-            Some(PrivateIntentCandidate {
-                domain: "unknown".into(),
-                goal_text: original.trim().to_owned(),
-                evidence_quote: source_quote(original),
-            })
-        } else {
-            Some(PrivateIntentCandidate {
-                domain: candidate.domain,
-                goal_text: candidate.goal_text.trim().to_string(),
-                evidence_quote: evidence.to_string(),
-            })
+    // US-01: up to three PRIVATE hypotheses, never guaranteed user Intent.
+    // Reject evidence tampering and fabricated/unapproved fields. Maintain the
+    // legacy single-candidate model contract for existing installed Android versions.
+    let mut candidates: Vec<PrivateIntentCandidate> = Vec::new();
+    let supplied=raw.intent_candidates.unwrap_or_default();
+    if supplied.len()>3 {
+        return Err(store_error("MODEL_OUTPUT_UNAPPROVED_FIELDS"));
+    }
+    let mut proposed=Vec::new();
+    if let Some(single)=raw.intent_candidate {proposed.push(single);}
+    proposed.extend(supplied);
+    if can_suggest {
+        for item in proposed {
+            let evidence=item.evidence_quote.trim();
+            if item.goal_text.trim().is_empty() ||
+                item.goal_text.chars().count()>500 || item.goal_text.len()>2048 ||
+                evidence.is_empty() || evidence.chars().count()>80 ||
+                !original.contains(evidence) ||
+                !matches!(item.domain.as_str(),"study"|"fashion"|"car"|"other"|"unknown")
+            {
+                continue; // Invalid AI hypothesis never becomes confirmed or an extra slot.
+            }
+            let normalized=PrivateIntentCandidate {
+                domain:item.domain,
+                goal_text:item.goal_text.trim().to_owned(),
+                evidence_quote:evidence.to_owned(),
+            };
+            if !candidates.iter().any(|x| x.goal_text==normalized.goal_text &&
+                x.domain==normalized.domain) {
+                candidates.push(normalized);
+            }
+            if candidates.len()==3 {break;}
         }
-    } else {
-        // If Gemma returns ordinary prose or omits the optional field,
-        // preserve obvious user-stated collaborative intent as an EDITABLE
-        // quote instead of forcing them to retype it. This is source extraction,
-        // not an AI-inferred goal or a confirmed intent.
-        Some(PrivateIntentCandidate {
-            domain: "unknown".into(),
-            goal_text: original.trim().to_owned(),
-            evidence_quote: source_quote(original),
-        })
-    };
+        if candidates.is_empty() {
+            // Fallback is ONLY copied user source, NOT an AI interpretation.
+            candidates.push(PrivateIntentCandidate {
+                domain:"unknown".into(),
+                goal_text:original.trim().to_owned(),
+                evidence_quote:source_quote(original),
+            });
+        }
+    }
+    let intent_candidate = candidates.first().cloned();
     let question = match raw.clarifying_question {
         Some(value) if intent_candidate.is_none() => {
             let trimmed = value.trim();
@@ -265,7 +273,7 @@ fn parse_private_model_reply(
         }
         _ => None,
     };
-    Ok((quote, raw.content_hint, raw.uncertainty, intent_candidate, question))
+    Ok((quote, raw.content_hint, raw.uncertainty, intent_candidate, question, candidates))
 }
 
 pub struct LocalStore {
@@ -837,7 +845,7 @@ impl LocalStore {
         {
             return Err(store_error("MODEL_INVALID_OUTPUT"));
         }
-        let (quote, content_hint, uncertainty, intent_candidate, clarifying_question) =
+        let (quote, content_hint, uncertainty, intent_candidate, clarifying_question, candidates) =
             parse_private_model_reply(original_input, &native.raw_text)?;
         let sha = format!("{:x}", Sha256::digest(original_input.as_bytes()));
         let now = clock_ms()?;
@@ -873,8 +881,8 @@ impl LocalStore {
         // A model may never insert into local_goal_drafts/confirmation_events.
         tx.execute("DELETE FROM local_intent_candidates WHERE asset_id=?1",
             params![uuid]).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
-        if let Some(ref candidate) = intent_candidate {
-            let json = serde_json::to_string(candidate)
+        if !candidates.is_empty() {
+            let json = serde_json::to_string(&candidates)
                 .map_err(|_| store_error("MODEL_OUTPUT_FORMAT"))?;
             tx.execute(
                 "INSERT INTO local_intent_candidates
@@ -929,12 +937,28 @@ impl LocalStore {
             params![uuid, sha,base_sha],
             |row| {
                 let json: Option<String> = row.get(10)?;
-                let candidate = json.map(|v| serde_json::from_str::<PrivateIntentCandidate>(&v))
-                    .transpose().map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let candidates: Vec<PrivateIntentCandidate> = match json {
+                    None => Vec::new(),
+                    Some(value) => {
+                        let parsed: serde_json::Value=serde_json::from_str(&value)
+                            .map_err(|_|rusqlite::Error::InvalidQuery)?;
+                        if parsed.is_array() {
+                            serde_json::from_value(parsed)
+                                .map_err(|_|rusqlite::Error::InvalidQuery)?
+                        } else {
+                            // Migration-safe: PR #16 wrote a single JSON object.
+                            vec![serde_json::from_value(parsed)
+                                .map_err(|_|rusqlite::Error::InvalidQuery)?]
+                        }
+                    }
+                };
+                if candidates.len()>3 {return Err(rusqlite::Error::InvalidQuery);}
+                let candidate=candidates.first().cloned();
                 Ok(ModelSuggestion {
                     asset_id: row.get(0)?, status: row.get(1)?,
                     evidence_quote: row.get(2)?, content_hint: row.get(3)?,
                     uncertainty: row.get(4)?, intent_candidate: candidate,
+                    intent_candidates:candidates,
                     pending_question: match row.get::<_,Option<i64>>(11)? {
                         Some(ordinal) => Some(PendingIntentQuestion {
                             ordinal,
