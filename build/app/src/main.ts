@@ -13,6 +13,7 @@ import { correctOcr, loadOcr, recognizeOcr, type OcrRecord } from "./platform/lo
 import {
   prepareModel,
   pauseModelDownload,
+  answerIntentQuestion,
   loadModelSuggestion,
   modelStatus,
   proposeModel,
@@ -52,7 +53,7 @@ root.innerHTML = `
 
     <main id="main-content">
       <section id="view-drop" class="view">
-        <p class="eyebrow">SPRINT 1 · US-01A</p>
+        <p class="eyebrow">SPRINT 1 · US-01 開發驗收中</p>
         <h1>從文字或圖片，開始理解你想做的事。</h1>
         <p class="lead">輸入文字或選擇圖片。Gemma 可以提出私人意圖建議，但只有你親自確認才會形成 Goal；目前不會自動找人或上傳原圖。</p>
 
@@ -261,6 +262,9 @@ const errors: Record<string, string> = {
   MODEL_OUTPUT_TOO_LONG: "Gemma 回答超出安全長度，沒有保存；可以重新執行。",
   MODEL_OUTPUT_UNAPPROVED_FIELDS: "Gemma 回答涉及不能由 AI 決定的欄位，已拒絕保存。",
   MODEL_STALE_INPUT: "你已更新原文／OCR，舊的模型建議已失效，請重新推論。",
+  B09_INVALID_QUESTION: "模型追問內容不符合安全格式，沒有採用。",
+  B09_INVALID_ANSWER: "請親自輸入有效回答（最多 500 字），或選擇只收藏。",
+  B09_QUESTION_STALE: "這題已回答、超出預算或來源已更新。請重新分析，避免重複追問。",
   GOAL_EMPTY: "請親自輸入你想找真人學伴做什麼；只有收藏字詞還不等於 Goal。",
   GOAL_TOO_LARGE: "目標敘述太長，請縮短至最多 500 字／2048 bytes。",
   GOAL_CONFIRMATION_REQUIRED: "未收到有效的本人明確確認操作，沒有建立草稿。",
@@ -452,6 +456,43 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
       const unknown = document.createElement("p");
       unknown.textContent = "目前找不到足夠證據推測你的合作目標；可以只收藏，或在下方自行說明。";
       output.append(unknown);
+    }
+    // A model-suggested question never becomes a confirmed intent or approved Concept.
+    // Rust/SQLite guarantee at most two clarifications, leaving the Goal confirmation
+    // as the third human checkpoint. Optional means no need to ask just to fill slots.
+    if (result.pendingQuestion) {
+      const q = result.pendingQuestion;
+      const label = document.createElement("label");
+      label.className = "field-label";
+      label.textContent = "必要釐清（第 " + q.ordinal + "/2 題）： " + q.text;
+      const answer = document.createElement("textarea");
+      answer.rows = 2;
+      answer.maxLength = 500;
+      answer.placeholder = "你可以補充自己的真正需求；也可以不回答，直接只收藏。";
+      label.append(answer);
+      const respond = document.createElement("button");
+      respond.type = "button";
+      respond.className = "secondary";
+      respond.textContent = "回答並用同一個本地 Gemma 重新理解";
+      respond.addEventListener("click", () => {
+        if (selectedAssetId !== assetId || !answer.value.trim()) {
+          state.textContent = errorMessage("B09_INVALID_ANSWER");
+          return;
+        }
+        respond.disabled = true;
+        void (async () => {
+          try {
+            await answerIntentQuestion(rust, assetId, q.ordinal, answer.value);
+            if (selectedAssetId !== assetId) return;
+            preview.querySelector(".model-panel")?.remove();
+            void renderModelPanel(assetId, true);
+          } catch (error) {
+            if (selectedAssetId === assetId) state.textContent = errorMessage(error);
+            respond.disabled = false;
+          }
+        })();
+      });
+      output.append(label, respond);
     }
     state.textContent = "Gemma 本地建議已保存（尚未本人確認） · " + result.elapsedMs + " ms";
   }
