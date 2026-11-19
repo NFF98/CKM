@@ -1,78 +1,74 @@
-# CAKAMI｜Phase 1 MVP 三個 Sprint 執行總覽
+# CAKAMI｜User Story 驅動的 3 Sprint 執行計畫（2026-11-19 修正版）
 
-> **建立日期：2026-11-17**；由使用者明確要求將 B01–B21 分成 **3 個 Sprint**，作為 Coding、Debug、驗收的共同參考。  
-> **目前狀態：PLAN READY／程式尚未完成**。本文件與分篇 Sprint 文件是執行安排，**不另立產品需求**；正式功能／依賴／P0 與 P1 以 [Build Bible B01–B21](BACKLOG.md) 和既有 Business v1.2／System v1.7／Functional v1.8 為準。  
-> 此計畫 **不是新的 Governance Gate**：CKM Harness 已容許開始 Coding；**不需要每個 Sprint 再次 Activation、Freeze 或批准**。人類只決定有爭議的產品行為，以及真正發布。
+> **取代舊 B01→B18 逐項交付的開發順序。** 既有三個 Sprint、B01–B21 編號、System v1.7 T01–T13、Functional v1.8、Business Proposal v1.2、MVP Study N2 範圍及安全規則均保留。**BXX 是模組／工程任務，User Story 是開發與驗收主線。**
+>
+> **現況（真機 Evidence）：US-01 = FAIL**。Gemma 能解釋 `パクる`，但沒有完成「推測→追問→本人確認→可用私人 Intent」；B05 單元測試 PASS 不等於 US-01 PASS。US-02、US-03 = NOT_RUN。詳見 [進度表](sprints/SPRINT-01_PROGRESS.md)。此文件修改的是工作計畫，**不是已修好程式或重發 APK**。
 
+## 0. Business North Star 與不可改的邊界
 
-## 0. 先讀規格，再依 Sprint Coding（不能只讀此計畫）
+**Drop Anything → Discover People → Accomplish Together**。P1 只發布 **18+ JLPT N2 Study Match**：Android 上輸入文字或 Drop 圖片，本地 AI 協助理解與確認私有 Goal；本人授權後 Cloud 找到同目標／Need↔Offer 相容的真人；雙方接受、15 分鐘文字練習、雙方確認完成。後續 Fashion/Car/Travel 可沿用通用引擎，但**不可因做跨域測試就開放 P1 以外的雲端配對**。
 
-**先讀 [四份細部設計對照／B01–B21 追溯矩陣](TRACEABILITY.md)。** 每個 Coding Task 都必須同時對照 [正式 Bible](BACKLOG.md)、[GUI Spec](../design/GUI_UX_SPEC.md)、[Functional Spec](../design/FUNCTIONAL_SPEC.md)、[Technical Spec](../design/TECHNICAL_SPEC.md)、[Acceptance Spec](../test/ACCEPTANCE_SPEC.md) 中受影響的章節。**Sprint 是工作排程，不是新的產品 Spec，也不能改寫 E2E Test 的原始 ID／期望結果。**
+保留 System v1.7：每個 Intent **最多 8 種已核准且有效的配對 Concept**（不是 8 個固定問題或固定欄位）；一次意圖/配對嘗試 AI **最多主動追問 3 題，包含 Goal 確認**；Pair-specific 最多 2 題。E2B 只提出候選，Rust/SQLite 確保合法，Goal 必須本人確認，對外分享另有 Consent。P1 **無 Cloud AI**：Supabase 只做 Auth／授權資料／匹配規則／Chat／結果，不對原圖、OCR、筆記做雲端 AI 推論。
 
-## 1. 三個 Sprint 的交付
+## 1. 三條 User Story，才是開發／驗收交付
 
-| Sprint | 對應 Bible | 真正可見成果 | 交付門檻 |
+| User Story | 真正要讓使用者做到什麼 | 動用既有 BXX | 交付 Gate |
 |---|---|---|---|
-| [Sprint 1｜本地 AI 與私人意圖](sprints/SPRINT-01_LOCAL_AI.md) | **B01–B09（均 P0）** | Android App 能 Drop N2 圖片／文字；本地 OCR＋E2B 提議內容；本人確認 Goal；8-slot、授權預覽、離線管理 | 9 個 B-ID 均有真實測試；Rust／SQLite 邊界可信；**B03 必須真機推論** |
-| [Sprint 2｜真人配對與合作](sprints/SPRINT-02_MATCHING.md) | **B10–B18（均 P0）** | 2 個合法測試帳號：同意分享 → 找到真候選／無候選 → 雙方邀請 → Chat → 15 分鐘練習 → 雙方完成確認 | 真實 Supabase Auth／RLS／Server Validation；非法資料無法跨帳號讀寫 |
-| [Sprint 3｜測試與 Android Pilot](sprints/SPRINT-03_RELEASE.md) | **B19（P0）、B20（P1）、B21（P0）** | 全流程回歸；T01–T13；安全／離線／效能證據；可安裝 Android 測試 APK | **B19 P0 全數 PASS 才允許 B21 發布**；B20 Benchmark 是 P1，**不是**發布阻擋條件 |
+| **US-01：我 Drop 文字／圖片，CAKAMI 幫我搞清楚要找誰做什麼** | **理解→提出意圖候選→必要追問→本人確認→儲存合法私人 Intent／參數**；不知道時留 UNKNOWN 或只收藏 | **B01–B07、B09**，B08 先準備私有分享預覽；核心跨 **B02→B03→B04→B05→B06→B09** | 同一支 Android APK 的完整流程＋真 SQLite 狀態、8-slot/同意安全負例 PASS；不是單一 BXX CI PASS |
+| **US-02：我同意後，CAKAMI 找到真正合適的人** | 顯示要分享內容→本人授權→真 Cloud 最少必要同步→Same Goal／互補 Need↔Offer＋硬條件→候選或真實無候選 | **B08、B10–B15**，依賴 US-01 合法 Intent；B07 撤銷／到期 | A/B 真測試帳號，授權前不得公開、合法候選能找到、不相容／封鎖／過期／未同意必被排除；Server/RLS PASS |
+| **US-03：我和對方真正完成合作，結果會留下來** | 真人邀請→雙方接受→Chat→15 分鐘→雙方確認→Server 可信完成→**本人可見 Outcome 回私人本地歷史** | **B16–B18**，跨 B02/B07 的結果回存契約（新設計草案需批准資料欄位） | A/B 真 Cloud Session、合法只有 1 筆 COMPLETED、負例不計完成；結果回流/重試有證據（僅已核准資料） |
 
-**工期**：先以 7 天為挑戰目標，**非承諾**；模型、雲端權限與真機速度需要實測。分 Sprint 不代表只能在某一天做該項工作；優先依 Bible 依賴和可運作的 Vertical Slice 開發。
+**最終使用者成功不是按了按鈕／模型答對單字；而是產生合法 Intent → 找到真正相容的人 → 真正完成合作。** Business Proposal North Star：每 100 個有效 Intent 的完成 Sessions；對照方法是驗證技術假說，不是已證實的 MOAT。
 
-## 2. 第一個可見成果與開發順序
+## 2. 仍保留三個 Sprint，但每個 Sprint 以 User Story 切片跑通
 
-1. **B01（立即開始）**：Tauri v2／TypeScript／Rust 骨架，Android 真機啟動，畫面能呼叫 Rust Command；同時架好 iOS Adapter 邊界。
-2. **B02 → B03（早期高風險技術驗證）**：選圖／文字／拍照 → 真機本地 OCR／E2B。模型不可用就如實回報 BLOCKED，**不可拿假的模型輸出取代 B03**；可並行做獨立基礎工作。
-3. **B04–B09**：內容與本人意圖分離、Concept Registry、交易式 8-slot、Intent 生命週期、分享授權、合理追問。
-4. **B10–B18**：帳號安全→RLS→授權同步→真人候選→邀請→Chat／Session→雙方完成。
-5. **B19 → B21**：完整 P0 驗收及 Android 測試版；B20 P1 比較可平行或稍後完成，不能把它偷改成 B21 必要 Gate。
+| Sprint | User Story／切片 | 交付成果 | 何時叫 PASS |
+|---|---|---|---|
+| [Sprint 1｜US-01 本地意圖](sprints/SPRINT-01_LOCAL_AI.md) | **US-01A** 純文字→模型→私人候選；**US-01B** 含 OCR 的圖片→同一引擎；**US-01C** 關鍵追問→Goal 本人確認→B05 合法參數／B06 上限；**US-01D** 版本／過期／只收藏／離線／分享預覽 | 可測試的完整本地體驗，支援 UNKNOWN，Study 不寫死成所有內容的 Goal | **US-01A～D** 真機流程、安全 DB/Contract、相關 T01–T13 子集逐條實測 PASS；BXX 子項仍各自留證據 |
+| [Sprint 2｜US-02＋US-03 真人閉環](sprints/SPRINT-02_MATCHING.md) | **US-02A** Consent＋Auth＋Cloud 同步安全；**US-02B** 真候選/無候選；**US-03A** 邀請/雙方接受；**US-03B** Chat/Session/Outcome；**US-03C** Outcome 回本地 | A/B 雙真實測試帳號跑完整條路，Cloud 不跑模型 | 各完整 Story 的 Cloud E2E、權限與負例 PASS；**US-02 PASS 不代表 US-03 PASS** |
+| [Sprint 3｜Release & Regression](sprints/SPRINT-03_RELEASE.md) | **US-01～03** 全流程回歸＋**B19** 安全/權限/效能，**B21** Android Pilot；**B20=P1** 公平比較 | 真機＋Cloud 一次通過：Input → 合法 Intent → 相容真人 → 雙方完成 → 私人可信結果 | **B19 所有 P0**、T01–T13、AI-LOCAL、E2E-01～05、User Story Gate 全 PASS 才 B21；B20 **不是**發版 P0 阻擋 |
 
-## 3. 開發從第一天就遵守的硬規則
+**原 B-ID 可以獨立開 PR、獨立跑 CI，但不能單靠某個 PR、單元測試或模型詞義答案標記 User Story 完成。** 若某切片 NG，立刻跨相關 BXX 修，直到它從使用者入口真的走到結果。無依賴的工程工作可並行，不用讓全案停擺。
 
-- **Phase 1 沒有 Cloud AI**：OCR、E2B、任何 AI 推理與向量產生（若需要）在手機本地；Supabase 可用於經同意後的帳號、資料查詢、配對、邀請及聊天，但不能呼叫雲端模型。
-- **Android 優先驗證、iOS 從 Day 1 可移植**：共用 TypeScript／Rust 的資料、規則、商業邏輯；選圖、權限、OCR、本地模型等能力以平台 Adapter 封裝。**iOS 實際編譯／運行尚未驗證**，不能冒稱已支援。
-- **Code-first GUI**：不做 High-fi；直接在 App 裡確認 S01–S09、S04a 的流程、觸控、錯誤／空／離線狀態。
-- **Rust + SQLite 是可信邊界**：8 個有效 Matching Concepts，slot 0–7、確認事件、provenance、scope、expiry、撤銷；AI 不得直接寫出已確認的 Goal／Need／Offer。
-- **雲端資料要有 User Consent**：原圖、私人 OCR／筆記不會**自動**上傳；實際上傳欄位需使用者確認；Embedding 也不能當匿名資料。
-- **真人學習 ≠ 假成功**：候選非成功、聊天非成功；15 分鐘與兩方完成確認才算完成。
-- **最小化治理**：沒有 Cursor、沒有二次 Sprint/Task 開工許可。Harness 形式性提醒不阻擋 Coding；真正的程式、安全與測試失敗要修正，不能假 PASS。
-- **不可提交私人資料或密鑰**：Repo 是 Public；測試帳號、配對資料及截圖使用合成／專用測試資料。
+## 3. 從現況立即繼續的順序（不是重新搭 B01）
 
-## 4. 每項 B-ID 的完成定義（Definition of Done）
+| 順序 | 實際工程工作 | 必須先看到什麼證據 |
+|---|---|---|
+| **NEXT-01 / US-01A** | 針對 **純文字** 修 B03→B04：Gemma 提有來源、可為 UNKNOWN 的 `PrivateIntentSuggestion`；UI 能選／修改→Rust 本人確認成私人 Goal | `我想找 JLPT N2 學伴練口說` 的 Android 真機 Input→私人候選→確認→SQLite；`パクる` 不能被強迫變學習意圖 |
+| **NEXT-02 / US-01B** | 圖片經 B03 OCR/更正進**同一條** Intent 流程；跨域 Fashion/Car OCR 文字作負例，沒有真視覺輸入時不可亂猜 | N2 教材／Fashion／Car／空白/歧義真機案例，來源修正使舊建議失效 |
+| **NEXT-03 / US-01C** | B05 已確認 Goal→受控參數候選，B06 真實 8-slot，B09 問最關鍵缺失、≤3 題（含 Goal） | 不是 AI 自填「CONFIRMED」；合法 Concept 可確認，第 9 必要條件拒絕，未知不亂配，問 0～3 題 |
+| **NEXT-04 / US-01D** | B07 期限、修改撤銷、離線狀態，B08 本地共享預覽（**不偷同步**）；完整 US-01 Android 真機重測 | 只收藏無 Goal；私有資料重啟持久；無 Consent 無網路上傳；US-01 全部可重現 |
+| **NEXT-05 / US-02→US-03** | Consent、Cloud Matching、真人合作與可驗證 Outcome，依原 B10–B18 安全依賴實作 | 每條 US 在真 Cloud 與雙帳號實測通過，負例/權限也過 |
 
-- 對照對應 Sprint 文件的 **AC（Acceptance Criteria）** 和 Bible 原始驗收；兩者不一致時以 Bible 與已批准規格為準。
-- 必須有**可執行的程式**、正常案例＋關鍵失敗案例、可重現測試指令及結果（而不是只有文案／Mock／靜態圖）。
-- 有 GitHub PR／Commit、使用的環境與依賴版本、證據位置；裝置相關項目要有實機／adb 日誌（不包含私密資料）。雲端安全需實際 RLS／API 測試。
-- 狀態固定使用 **NOT_STARTED / IN_PROGRESS / PASS / FAIL / BLOCKED / NOT_RUN（測試尚未執行）**，只有實測 PASS 才說完成。Mock 可輔助開發，但不能冒充 Android／E2B／Supabase 真實 PASS。
-- **Sprint 不用等全綠才允許做無依賴的其他 Coding**。某項受阻，只標示該 B-ID 和受其依賴的下游功能 BLOCKED，不得讓治理流程造成全案死鎖。
-- 每個 PR 自動跑當時已實際存在的 CI（Harness、相關 TypeScript／Rust／測試）；新增的測試需明確記錄。**CI 的範圍以實際執行結果為準**，不宣稱目前具備原生 iOS/Android 全自動測試。
+**避免 Trial & Error 的先決條件：** 先訂定 US-01 資料契約與測試 fixtures（包含純文字、歧義詞 `パクる`、Study／Fashion／Car、已確認／拒絕），在 Rust/TS 跑跨模組 Contract Tests；再整合 Android 批次驗收。保留既有「至少 2 項獨立功能準備好才打包新 APK，P0 阻斷例外」節奏；打包與否**不能**改變 PASS 定義。
 
-## 5. Debug 如何運作（直接在 Coding PR 內處理）
+## 4. 每一條 User Story 的固定工作節奏
 
 ```text
-可重現的錯誤 → 記錄 B-ID／AC-ID → 最小失敗測試
-→ 找根因 → 修改 → 重跑受影響測試 → GitHub PR 記 Evidence
+選一條 User Story → 寫真人操作/預期結果/失敗例
+→ 找出需要改的 BXX → 定義來源/候選/確認/權限/持久化契約
+→ 同一個 Fixture 做跨 BXX 的 CI/SQLite 測試
+→ Android／Cloud 真 E2E → 用戶實測 PASS 或 NG
+→ 更新 User Story + BXX 兩層 Evidence，NG 直接修到通
 ```
 
-每個失敗至少記錄：`B-ID + AC-ID`、平台與版本、重現步驟、預期／實際、錯誤日誌、根因、修正 Commit、重測結果與尚存風險。先在同一個 Coding PR 中完成一般 Bugfix；若牽涉未決定的產品規則才請使用者決策，**不為普通 Bug 新增治理審批**。同一修復方法連續無效，改用新的可驗證手段，不無限重試。
+**Gate 兩層不可混淆：**
+- **模組 Gate**：BXX 的單元／契約／安全／實體測試通過，可稱「該 BXX 的相應 Coding/CI 完成」。
+- **產品 Gate**：US-01／02／03 的用戶旅程在真機／真 Server 完成，且必要拒絕／撤銷案例通過，才能稱該故事 PASS。
 
-## 6. 未決事項不阻擋 B01，但相關功能不能擅自定案
+## 5. 仍需守住的工程與產品決策
 
-| 類型 | 尚待確認的產品細節 | 影響 | 工作方式 |
-|---|---|---|---|
-| 帳號及成年 | 免登入可用範圍、18+ 是自我聲明還是真驗齡 | B10／B16 | 在 B10 前確認，不影響 B01 |
-| 分享 | 公開欄位範圍；是否容許使用者**額外主動**分享原圖 | B08／B12 | 先採最小私有資料原則，具體 Payload 經 Human 確認才發布 |
-| 邀請 | 逾時、取消與重試規則 | B16 | 在 B16 前確認 |
-| Session | 15 分鐘起算、離線／背景中斷、No-show | B17／B18 | 在相應任務前確認 |
-| 模型 | E2B 版本、runtime、機型／記憶體可行性 | B03 | **立即實測**，屬技術驗證非先決產品審批 |
+- 既有 B01～B05 程式和 Stacked PR 原封保留；不因換 Sprint 計畫重寫或合併，也不抹掉原有 PASS/FAIL Evidence。
+- P1 仍 18+ JLPT N2；Cross-domain 研究 Fashion／Car 只檢查「不亂誤判」與 Core 可擴展，未批准不開放 Cloud。圖片無文字時，現有 B03 **只有 OCR→文字 Gemma，無真正 Pixel Vision**，應顯示 UNKNOWN。
+- 8-slot 是有效 Matching Concept 的**容量上限**，不是預設固定八欄；詳細 Concepts 白名單 T-01 仍 OPEN，不能自行捏造 Need/Offer/時間是已核准 Registry。
+- B09 主動追問每次最多 3 題（含 Goal）、B15 Pair-only 2 題；單一問題可確認多個合法候選，資料不足留 UNKNOWN。
+- 雲端只得到經本人同意的必要摘要，Server 重新驗證；拒絕、過期、封鎖、撤銷一律不可配對。B18 Server 驗證兩方完成；Outcome 回私人手機的具體欄位／Consent 與跨人聚合仍需 Human 批准，不能偷加公開資料或 Cloud AI。
+- P0 新使用者驗收案例詳見 [Acceptance Spec：US Gate](../test/ACCEPTANCE_SPEC.md)。**原 E2E-01～05 與 T01–T13 不改名、不刪除**。
+- 遇到尚未核准的公開欄位、成年確認、Session 計時／Outcome 規則，只阻擋相關 Cloud 功能，不停掉本地 US-01 私人候選 Coding。
 
-不把未批准的建議數值寫成已核准事實。具體欄位／API 命名由 Coding Agent 提出並做 Contract Test，不需要 Human 審每個欄位；會改變私隱、安全與使用者體驗的選擇才由 Human 決策。
+## 6. 執行文件與接棒
 
-## 7. 參考與進度證據
-
-- [Bible：B01–B21](BACKLOG.md)（唯一建置工作總表）。
-- [Sprint 1 驗收](sprints/SPRINT-01_LOCAL_AI.md)｜[Sprint 2 驗收](sprints/SPRINT-02_MATCHING.md)｜[Sprint 3 驗收](sprints/SPRINT-03_RELEASE.md)。
-- [單一 AI Harness](../harness/README.md)；[PR #4 已合併](https://github.com/NFF98/CKM/pull/4)。
-- **四份詳細規格已合併至 main**：[GUI／UX](../design/GUI_UX_SPEC.md)、[Functional](../design/FUNCTIONAL_SPEC.md)、[Technical](../design/TECHNICAL_SPEC.md)、[Acceptance](../test/ACCEPTANCE_SPEC.md)。它們是 Sprint Coding 的**實際工作依據**；其中標記 PROPOSED／OPEN 的產品行為仍不代表已批准。
-- **[B01–B21 完整追溯矩陣](TRACEABILITY.md)**：每個 B-ID → 四份 Spec 章節 → Sprint AC → 正式 Test IDs（T01–T13、E2E-01～05）。避免 Sprint 規格另創定義。
-- 開工當下 B01–B21 **沒有任何 App 功能被標記 PASS**。進度／測試結果依後續 Coding PR 及實際 Evidence 更新，不在此偽造。
+- [Build Bible B01–B21](BACKLOG.md)：任務目錄／原有依賴；[Traceability](TRACEABILITY.md)：**先選 User Story，再映射 BXX**。
+- [Sprint 1：US-01](sprints/SPRINT-01_LOCAL_AI.md)｜[Sprint 2：US-02/03](sprints/SPRINT-02_MATCHING.md)｜[Sprint 3：Release](sprints/SPRINT-03_RELEASE.md)。
+- [Sprint 1 Progress](sprints/SPRINT-01_PROGRESS.md)：**US-01 FAIL**，既有 B02/03/04/05 狀態保留，不能以舊表上方歷史 NOT_RUN 抹掉使用者最新 NG。
+- [Action Intelligence Universal Intent Engine DRAFT](../design/ACTION_INTELLIGENCE_ARCHITECTURE_v1_DRAFT.md) 是新候選契約的**設計草案，不是已實作的正式公開規則**。詳細 SOURCE 仍以 Business v1.2／System v1.7／Functional v1.8 為準。
