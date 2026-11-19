@@ -364,3 +364,22 @@ fn b06_deleting_original_private_content_cascades_slots() {
         |r|r.get(0)).unwrap();
     assert_eq!(n,0);
 }
+
+/// T10/T12: exercise exact 8 + ninth boundary with synthetic slot indices.
+/// These do NOT authorize eight new concepts in the live T-01 registry.
+#[test]
+fn b06_eight_slots_full_ninth_rejected_without_eviction() {
+    let mut used: Vec<i64> = Vec::new();
+    for expected in 0..8_i64 {
+        let slot = lowest_free_matching_slot(&used).unwrap();
+        assert_eq!(slot, expected);
+        used.push(slot);
+    }
+    assert_eq!(lowest_free_matching_slot(&used).unwrap_err(),
+        "B06_SLOT_BUDGET_EXCEEDED");
+    assert_eq!(used, (0_i64..8).collect::<Vec<_>>(),
+        "the ninth must never evict an existing hard constraint");
+    used.remove(3);
+    assert_eq!(lowest_free_matching_slot(&used).unwrap(), 3,
+        "a genuinely released slot is reused deterministically");
+}
