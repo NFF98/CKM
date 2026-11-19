@@ -2,6 +2,18 @@
 
 > GitHub 追蹤用，不是新 Governance Gate。**只有具備真實 Evidence 才可標 PASS**；上層依據 [Build Bible](../BACKLOG.md)／[Spec Traceability](../TRACEABILITY.md)／[Sprint 1 AC](SPRINT-01_LOCAL_AI.md)。
 
+## 2026-11-19｜US-01A Coding 續作（PR #16；尚非真機 PASS）
+
+**PR：** [US-01A 本地意圖候選 Coding #16](https://github.com/NFF98/CKM/pull/16)，疊在 [User Story Sprint #15](https://github.com/NFF98/CKM/pull/15) 之上；保留 B01～B05 既有程式，不開始第二套架構。
+
+- **B02 → B03 → B04 首次真接線（Coding 已推）：** 純文字保存後自動呼叫裝置端 Gemma；Kotlin 的候選 JSON 可攜帶 `intentCandidate`（領域、可編輯 Goal、原文證據），Rust 對有本人合作需求線索的文字建立 `suggested_private` 私人候選；不明語境 `パクる` 不允許模型猜成找學伴。
+- **SQLite**：新增外鍵級聯的 `local_intent_candidates` 私人表，跟 B03 模型解釋結果同一交易寫入，核對來源 SHA；更正 OCR／刪來源後，舊候選不得重用。
+- **UI**：看到具體建議可以按「採用這個建議，先修改再確認」，轉入既有 B04 Goal 編輯欄；**只有本人再次按確認**才會有原本 Rust 的私人 Goal confirmation event，沒有 Cloud Consent／Match。
+- **韌性**：若手機 Gemma 不輸出可解析的候選、但使用者**原文已明確寫出找人合作意圖**，Rust 可提供**純原文、可修改的私人候選**，不自行捏造目標；只有字詞／廣告／非合作描述仍 UNKNOWN。模型 unavailable 時如實報錯且不走 Cloud AI。
+- **新增測試**：Rust 從 B02 text Drop→B03 proposal→B04 human-confirm→重新開啟 SQLite 的跨模組整合；純文字、無上下文、Fashion、壞證據、偽造 Consent、TS contract。**Android 真機完整 US-01A PASS Evidence 尚未取得，不宣稱測試通過。**
+- **最新規劃**：US-01A 程式與 CI 修正 → US-01B 圖片共用意圖引擎 → **US-01C 包含 B05＋B06 真 8-slot＋B09 智能追問** → US-01D 私有生命週期與分享預覽。**B06 沒有被刪除／延期到 Sprint 2**；Sprint 1／US-01 必須全路徑真機與相關 DB 安全測試 PASS 方能交付。
+- **APK**：遵守既有至少兩項獨立功能準備好再批次打包的決策；PR #16 僅 Coding/CI，暫無新版 APK。不可叫使用者用舊 APK 驗新功能。
+
 ## 2026-11-19 最新交付狀態（User Story 優先；舊 BXX 表是歷史工程證據）
 
 | User Story／切片 | 真實測試狀態 | 根因／下一步 | 絕對不能算 PASS 的證據 |

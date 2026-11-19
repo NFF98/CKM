@@ -373,6 +373,46 @@ mod tests {
     }
 
     #[test]
+    fn us01a_end_to_end_text_model_candidate_human_confirmation_sqlite_reopen() {
+        // 這個測試串起 B02 → B03 的候選 → B04 本人確認 → 真 SQLite，
+        // 不能由「各自模組 CI PASS」冒充 User Story PASS。
+        let dir = tempfile::tempdir().unwrap();
+        let assets = LocalStore::open(dir.path()).unwrap();
+        let source = "我想找人一起練 JLPT N2 口說";
+        let asset = assets.save(text(source)).unwrap();
+        let reply = tauri_plugin_cakami_model::NativeReply {
+            raw_text: r#"{"evidenceQuote":"我想找人","contentHint":"想共同練日語口說",
+                "intentCandidate":{"domain":"study",
+                "goalText":"我想找真人學伴一起練 JLPT N2 口說",
+                "evidenceQuote":"我想找人一起練"}}"#.into(),
+            model_id: "gemma-4-E2B-it".into(), runtime: "litert-lm-android-0.16.1".into(),
+            backend: "cpu".into(), elapsed_ms: 88,
+        };
+        let suggested = assets.save_model_suggestion(&asset.id, source, reply).unwrap();
+        let candidate = suggested.intent_candidate.expect("private candidate");
+        let goal = GoalStore::open(dir.path()).unwrap();
+        assert!(goal.load(&asset.id).unwrap().is_none(),
+            "Gemma cannot confirm before user action");
+        let confirmed = goal.confirm(input(&asset.id, &candidate.goal_text, 0)).unwrap();
+        assert_eq!(confirmed.goal_text, candidate.goal_text);
+        assert_eq!(confirmed.goal_state, "confirmed_by_user");
+        assert_eq!(confirmed.intent_state, "draft_private");
+        assert_eq!(confirmed.visibility, "private");
+        assert!(!confirmed.share_consent);
+        assert!(!confirmed.publishable);
+        let conn = goal.connect().unwrap();
+        let events: i64 = conn.query_row(
+            "SELECT count(*) FROM local_goal_confirmation_events WHERE draft_id=?1",
+            params![confirmed.id], |r| r.get(0)).unwrap();
+        assert_eq!(events, 1);
+        drop(goal);
+        drop(assets);
+        let reopened = GoalStore::open(dir.path()).unwrap();
+        assert_eq!(reopened.load(&asset.id).unwrap().unwrap().goal_text,
+            candidate.goal_text);
+    }
+
+    #[test]
     fn b04_model_suggestion_does_not_create_confirmed_goal() {
         let dir = tempfile::tempdir().unwrap();
         let assets = LocalStore::open(dir.path()).unwrap();
@@ -381,7 +421,7 @@ mod tests {
         let model_output = crate::local_store::ModelSuggestion {
             asset_id: a.id.clone(), status: "suggested_private".into(),
             evidence_quote: "パクる".into(), content_hint: Some("日語單字".into()),
-            uncertainty: None, model_id: "gemma-4-E2B-it".into(),
+            uncertainty: None, intent_candidate: None, model_id: "gemma-4-E2B-it".into(),
             runtime: "litert-lm-android-0.16.1".into(), backend: "cpu".into(),
             elapsed_ms: 12, updated_at_ms: 0,
         };

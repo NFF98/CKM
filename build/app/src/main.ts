@@ -52,9 +52,9 @@ root.innerHTML = `
 
     <main id="main-content">
       <section id="view-drop" class="view">
-        <p class="eyebrow">SPRINT 1 · B02</p>
-        <h1>把想學的日文，放進私人收藏。</h1>
-        <p class="lead">選擇截圖、拍照或貼上文字。保存在手機裡，重啟後仍可找回；現在不會自動找人，也不會上傳原圖。</p>
+        <p class="eyebrow">SPRINT 1 · US-01A</p>
+        <h1>從文字或圖片，開始理解你想做的事。</h1>
+        <p class="lead">輸入文字或選擇圖片。Gemma 可以提出私人意圖建議，但只有你親自確認才會形成 Goal；目前不會自動找人或上傳原圖。</p>
 
         <section class="note" aria-labelledby="drop-heading">
           <h2 id="drop-heading">放入圖片或文字</h2>
@@ -64,9 +64,9 @@ root.innerHTML = `
           </div>
           <input type="file" id="image-picker" accept="image/png,image/jpeg,image/webp" hidden aria-label="選擇私人圖片" />
           <input type="file" id="camera-picker" accept="image/png,image/jpeg,image/webp" capture="environment" hidden aria-label="手機拍照" />
-          <label for="drop-text" class="field-label">或貼上日文文字</label>
-          <textarea id="drop-text" rows="4" placeholder="例如：パクる 是什麼意思？" spellcheck="false"></textarea>
-          <button type="button" class="primary" id="save-text">保存私人文字</button>
+          <label for="drop-text" class="field-label">或輸入任何文字（不用圖片）</label>
+          <textarea id="drop-text" rows="4" placeholder="例如：我想找人一起練 JLPT N2 口說" spellcheck="false"></textarea>
+          <button type="button" class="primary" id="save-text">保存並理解這段文字</button>
           <p class="fineprint">目前圖片僅支援 PNG／JPEG／WebP，單張上限暫定 8 MB；文字最多 64 KB。這是開發期安全上限，仍待正式規格確認。</p>
           <p id="save-status" role="status" aria-live="polite" class="status">尚未選擇內容</p>
         </section>
@@ -127,8 +127,8 @@ root.innerHTML = `
         </dialog>
 
         <div class="note boundary">
-          <strong>B04｜Content 不等於 Goal</strong>
-          <p>圖片與文字只有「私人收藏」身分。本地 OCR／Gemma 可以提出內容建議，但不會自行建立找學伴目標。只有你親自輸入並確認 Goal，才會保存私人草稿；目前不會公開、配對或上傳。</p>
+          <strong>US-01｜內容不等於本人意圖</strong>
+          <p>本地 Gemma 可以提出私人 Goal 候選，你可以採用、修改或只收藏；只有你按下確認，Rust 才保存私人草稿。目前不會公開、配對或上傳。</p>
         </div>
         <button type="button" class="secondary" id="go-diagnostic">檢查裝置端 Rust 連線</button>
       </section>
@@ -391,13 +391,13 @@ async function initializeModelProvisioning(): Promise<void> {
   window.setInterval(() => { void refreshModelStatus(); }, 2500);
 }
 
-async function renderModelPanel(assetId: string): Promise<void> {
+async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<void> {
   if (selectedAssetId !== assetId) return;
   const panel = document.createElement("section");
   panel.className = "model-panel";
-  panel.setAttribute("aria-label", "私人 Gemma 內容理解");
+  panel.setAttribute("aria-label", "私人 Gemma 內容理解與意圖候選");
   const heading = document.createElement("h3");
-  heading.textContent = "Gemma 私人內容建議";
+  heading.textContent = "Gemma 私人理解與可能意圖";
   const state = document.createElement("p");
   state.className = "status";
   state.setAttribute("role", "status");
@@ -410,7 +410,7 @@ async function renderModelPanel(assetId: string): Promise<void> {
   button.textContent = "用手機 Gemma 理解這筆內容";
   const note = document.createElement("p");
   note.className = "fineprint";
-  note.textContent = "只依保存的文字或 OCR 推論；所有建議皆為私有候選，不能直接確認 Goal、Need、Offer 或分享同意。";
+  note.textContent = "只依保存的文字或 OCR 推論；不明確就不猜 Goal。任何建議都需本人修改、確認，且不代表分享同意。";
   panel.append(heading, state, output, button, note);
   preview.append(panel);
 
@@ -423,6 +423,34 @@ async function renderModelPanel(assetId: string): Promise<void> {
     const uncertain = document.createElement("p");
     uncertain.textContent = "仍不確定：" + (result.uncertainty || "尚未確認是否正確");
     output.append(quote, hint, uncertain);
+    if (result.intentCandidate) {
+      const intent = document.createElement("p");
+      intent.textContent = "可能想做的事（" + result.intentCandidate.domain + "）：" +
+        result.intentCandidate.goalText;
+      const evidence = document.createElement("p");
+      evidence.className = "fineprint";
+      evidence.textContent = "提出此建議的原文：" + result.intentCandidate.evidenceQuote;
+      const adopt = document.createElement("button");
+      adopt.type = "button";
+      adopt.className = "secondary";
+      adopt.textContent = "採用這個建議，先修改再確認";
+      adopt.addEventListener("click", () => {
+        if (selectedAssetId !== assetId) return;
+        const field = preview.querySelector<HTMLTextAreaElement>('textarea[data-goal-input="true"]');
+        if (!field) {
+          state.textContent = "Goal 編輯欄位尚未準備好，請再開啟這筆收藏。";
+          return;
+        }
+        field.value = result.intentCandidate!.goalText;
+        field.focus();
+        state.textContent = "私人建議已填入 Goal 編輯欄。請核對或修改，再按「確認 Goal」；尚未保存或分享。";
+      });
+      output.append(intent, evidence, adopt);
+    } else {
+      const unknown = document.createElement("p");
+      unknown.textContent = "目前找不到足夠證據推測你的合作目標；可以只收藏，或在下方自行說明。";
+      output.append(unknown);
+    }
     state.textContent = "Gemma 本地建議已保存（尚未本人確認） · " + result.elapsedMs + " ms";
   }
   try {
@@ -449,6 +477,7 @@ async function renderModelPanel(assetId: string): Promise<void> {
       }
     })();
   });
+  if (autoAnalyze) button.click();
 }
 
 async function refreshDrops(): Promise<void> {
@@ -817,28 +846,29 @@ async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Pr
   await refresh();
 }
 
-/** B04：不從 OCR 或模型自動填入或確認 Goal；本人明確輸入且二次確認後才寫 Rust。 */
+/** US-01A/B04：模型建議只能經本人點選採用，不能自行確認 Goal。 */
 async function renderGoalPanel(assetId: string): Promise<void> {
   if (selectedAssetId !== assetId) return;
   const panel = document.createElement("section");
   panel.className = "goal-panel";
   panel.setAttribute("aria-label", "S02 私人內容與本人 Goal 分離");
   const heading = document.createElement("h3");
-  heading.textContent = "你想找真人學伴嗎？";
+  heading.textContent = "你想和別人一起完成什麼？";
   const explanation = document.createElement("p");
   explanation.className = "fineprint";
-  explanation.textContent = "收藏「パクる」或餐廳廣告，不代表你要找人。可以只收藏，或自己寫下真正的學習目標。";
+  explanation.textContent = "Gemma 可以提出私人 Goal 候選，但「パクる」等無上下文內容不能直接當成找人意圖。你可以採用建議、修改，或只收藏。";
   const state = document.createElement("p");
   state.className = "status";
   state.setAttribute("role", "status");
   state.setAttribute("aria-live", "polite");
   const field = document.createElement("label");
   field.className = "field-label";
-  field.textContent = "只有你自己能確認的 Goal（不會自動填入）";
+  field.textContent = "本人要確認的 Goal（可選用上方 AI 建議）";
   const input = document.createElement("textarea");
   input.rows = 3;
+  input.dataset.goalInput = "true";
   input.maxLength = 500;
-  input.placeholder = "例如：我想找真人學伴，每週一起練習 JLPT N2 聽力。";
+  input.placeholder = "例如：我想找真人學伴一起練 JLPT N2 口說。";
   field.append(input);
   const choices = document.createElement("div");
   choices.className = "goal-actions";
@@ -853,7 +883,7 @@ async function renderGoalPanel(assetId: string): Promise<void> {
   choices.append(keep, confirm);
   const disclaimer = document.createElement("p");
   disclaimer.className = "fineprint";
-  disclaimer.textContent = "確認只產生本機的私人草稿與事件；正式分享授權、配對條件及找學伴留給 B05–B08，現在不能發布。";
+  disclaimer.textContent = "確認只會產生私人 Goal 與本人確認事件。B05／B06 的合法配對條件及 8-slot、B08 分享授權仍是獨立步驟；目前不會發布。";
   panel.append(heading, explanation, state, field, choices, disclaimer);
   preview.append(panel);
 
@@ -915,7 +945,7 @@ async function renderGoalPanel(assetId: string): Promise<void> {
   });
 }
 
-async function openAsset(id: string): Promise<void> {
+async function openAsset(id: string, autoAnalyze = false): Promise<void> {
   selectedAssetId = id;
   preview.hidden = false;
   preview.replaceChildren();
@@ -941,7 +971,7 @@ async function openAsset(id: string): Promise<void> {
       content.textContent = asset.text || "";
       preview.append(content);
     }
-    if (selectedAssetId === id) await renderModelPanel(id);
+    if (selectedAssetId === id) await renderModelPanel(id, autoAnalyze);
     if (selectedAssetId === id) await renderGoalPanel(id);
     const note = document.createElement("p");
     note.className = "fineprint";
@@ -964,7 +994,7 @@ async function savePrivateText(): Promise<void> {
       ? "私人文字已保存；系統偵測到相同內容曾收藏，兩筆都保留。"
       : "私人文字已保存到手機。";
     await refreshDrops();
-    await openAsset(saved.id);
+    await openAsset(saved.id, true);
   } catch (error) {
     saveStatus.textContent = errorMessage(error);
   } finally {

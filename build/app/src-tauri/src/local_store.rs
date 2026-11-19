@@ -71,6 +71,15 @@ pub struct OcrRecord {
     pub updated_at_ms: Option<i64>,
 }
 
+/// US-01A: an unconfirmed, private suggestion. It is neither a Goal event nor Consent.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PrivateIntentCandidate {
+    pub domain: String,
+    pub goal_text: String,
+    pub evidence_quote: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelSuggestion {
@@ -79,6 +88,7 @@ pub struct ModelSuggestion {
     pub evidence_quote: String,
     pub content_hint: Option<String>,
     pub uncertainty: Option<String>,
+    pub intent_candidate: Option<PrivateIntentCandidate>,
     pub model_id: String,
     pub runtime: String,
     pub backend: String,
@@ -93,6 +103,27 @@ struct RawSuggestion {
     evidence_quote: Option<String>,
     content_hint: Option<String>,
     uncertainty: Option<String>,
+    intent_candidate: Option<PrivateIntentCandidate>,
+}
+
+/// Rust deliberately requires first-person collaborative intent evidence before offering
+/// a matching Goal. Topic-only content (including "パクる") must remain UNKNOWN.
+/// This conservative gate can abstain; it never creates or confirms a Goal.
+fn explicit_collaboration_intent(source: &str) -> bool {
+    let s = source.to_lowercase();
+    let wants = ["我想", "我要", "我希望", "想找", "希望找", "想和", "想跟",
+        "i want", "i need", "i'd like", "looking for", "i am looking",
+        "探してい", "探したい", "一緒にしたい", "一緒に勉強したい"]
+        .iter().any(|needle| s.contains(needle));
+    let together = ["找人", "找個人", "學伴", "伙伴", "夥伴", "一起", "合作",
+        "搭子", "找真人", "和人", "跟人", "partner", "someone",
+        "with others", "with someone", "together", "一緒", "仲間"]
+        .iter().any(|needle| s.contains(needle));
+    wants && together
+}
+
+fn source_quote(source: &str) -> String {
+    source.chars().take(80).collect()
 }
 
 /// On-device small models may return JSON, fenced JSON or plain text.
@@ -101,7 +132,7 @@ struct RawSuggestion {
 fn parse_private_model_reply(
     original: &str,
     reply: &str,
-) -> Result<(String, Option<String>, Option<String>), String> {
+) -> Result<(String, Option<String>, Option<String>, Option<PrivateIntentCandidate>), String> {
     let text = reply.trim().trim_start_matches('\u{feff}').trim();
     if text.is_empty() || text.len() > 8192 {
         return Err(store_error("MODEL_OUTPUT_FORMAT"));
@@ -139,6 +170,7 @@ fn parse_private_model_reply(
                 evidence_quote: None,
                 content_hint: Some(body.to_owned()),
                 uncertainty: Some("模型回覆為一般文字，尚未結構化；請自行核對。".into()),
+                intent_candidate: None,
             }
         }
     };
@@ -167,7 +199,51 @@ fn parse_private_model_reply(
     if quote.trim().is_empty() || !original.contains(&quote) {
         return Err(store_error("MODEL_EVIDENCE_MISMATCH"));
     }
-    Ok((quote, raw.content_hint, raw.uncertainty))
+    // A model guess is never an authorization. Even a valid proposal is withheld when
+    // the source does not explicitly express a personal wish to collaborate.
+    let can_suggest = explicit_collaboration_intent(original)
+        && original.chars().count() <= 500
+        && original.len() <= 2048;
+    let intent_candidate = if !can_suggest {
+        None
+    } else if let Some(candidate) = raw.intent_candidate {
+        let evidence = candidate.evidence_quote.trim();
+        let domain = candidate.domain.as_str();
+        if candidate.goal_text.trim().is_empty()
+            || candidate.goal_text.chars().count() > 500
+            || candidate.goal_text.len() > 2048
+            || evidence.is_empty()
+            || evidence.chars().count() > 80
+            || !original.contains(evidence)
+            || !matches!(domain, "study" | "fashion" | "car" | "other" | "unknown")
+        {
+            // Discard the AI-written goal when its evidence is wrong, but preserve
+            // the person's own explicit text as an editable private candidate.
+            // This cannot invent intent: it quotes only the user's actual source.
+            Some(PrivateIntentCandidate {
+                domain: "unknown".into(),
+                goal_text: original.trim().to_owned(),
+                evidence_quote: source_quote(original),
+            })
+        } else {
+            Some(PrivateIntentCandidate {
+                domain: candidate.domain,
+                goal_text: candidate.goal_text.trim().to_string(),
+                evidence_quote: evidence.to_string(),
+            })
+        }
+    } else {
+        // If Gemma returns ordinary prose or omits the optional field,
+        // preserve obvious user-stated collaborative intent as an EDITABLE
+        // quote instead of forcing them to retype it. This is source extraction,
+        // not an AI-inferred goal or a confirmed intent.
+        Some(PrivateIntentCandidate {
+            domain: "unknown".into(),
+            goal_text: original.trim().to_owned(),
+            evidence_quote: source_quote(original),
+        })
+    };
+    Ok((quote, raw.content_hint, raw.uncertainty, intent_candidate))
 }
 
 pub struct LocalStore {
@@ -263,6 +339,13 @@ impl LocalStore {
                updated_at_ms INTEGER NOT NULL,
                CHECK(raw_text IS NULL OR length(raw_text) <= 65536),
                CHECK(corrected_text IS NULL OR length(corrected_text) <= 65536)
+             );
+             CREATE TABLE IF NOT EXISTS local_intent_candidates (
+               asset_id TEXT PRIMARY KEY NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
+               source_sha256 TEXT NOT NULL CHECK(length(source_sha256)=64),
+               candidate_json TEXT NOT NULL CHECK(length(candidate_json) <= 4096),
+               state TEXT NOT NULL DEFAULT 'suggested_private'
+                 CHECK(state='suggested_private')
              );
              CREATE TABLE IF NOT EXISTS local_model_suggestions (
                asset_id TEXT PRIMARY KEY NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
@@ -664,7 +747,7 @@ impl LocalStore {
         {
             return Err(store_error("MODEL_INVALID_OUTPUT"));
         }
-        let (quote, content_hint, uncertainty) =
+        let (quote, content_hint, uncertainty, intent_candidate) =
             parse_private_model_reply(original_input, &native.raw_text)?;
         let sha = format!("{:x}", Sha256::digest(original_input.as_bytes()));
         let now = clock_ms()?;
@@ -707,6 +790,20 @@ impl LocalStore {
             params![uuid, sha, quote, content_hint, uncertainty, native.model_id,
                     native.runtime, native.backend, native.elapsed_ms as i64, now],
         ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        // Update content hint + optional private intent in one transaction.
+        // A model may never insert into local_goal_drafts/confirmation_events.
+        tx.execute("DELETE FROM local_intent_candidates WHERE asset_id=?1",
+            params![uuid]).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        if let Some(ref candidate) = intent_candidate {
+            let json = serde_json::to_string(candidate)
+                .map_err(|_| store_error("MODEL_OUTPUT_FORMAT"))?;
+            tx.execute(
+                "INSERT INTO local_intent_candidates
+                 (asset_id,source_sha256,candidate_json,state)
+                 VALUES (?1,?2,?3,'suggested_private')",
+                params![uuid, sha, json],
+            ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        }
         tx.commit().map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
         self.load_model_suggestion(&uuid)?
             .ok_or_else(|| store_error("DATABASE_READ_FAILED"))
@@ -719,18 +816,27 @@ impl LocalStore {
         let sha = format!("{:x}", Sha256::digest(input.as_bytes()));
         let conn = self.connect()?;
         conn.query_row(
-            "SELECT asset_id,status,evidence_quote,content_hint,uncertainty,
-                    model_id,runtime,backend,elapsed_ms,updated_at_ms
-             FROM local_model_suggestions WHERE asset_id=?1 AND source_sha256=?2",
+            "SELECT s.asset_id,s.status,s.evidence_quote,s.content_hint,s.uncertainty,
+                    s.model_id,s.runtime,s.backend,s.elapsed_ms,s.updated_at_ms,
+                    i.candidate_json
+             FROM local_model_suggestions s
+             LEFT JOIN local_intent_candidates i ON i.asset_id=s.asset_id
+               AND i.source_sha256=s.source_sha256
+             WHERE s.asset_id=?1 AND s.source_sha256=?2",
             params![uuid, sha],
-            |row| Ok(ModelSuggestion {
-                asset_id: row.get(0)?, status: row.get(1)?,
-                evidence_quote: row.get(2)?, content_hint: row.get(3)?,
-                uncertainty: row.get(4)?, model_id: row.get(5)?,
-                runtime: row.get(6)?, backend: row.get(7)?,
-                elapsed_ms: row.get::<_, i64>(8)?.max(0) as u64,
-                updated_at_ms: row.get(9)?,
-            }),
+            |row| {
+                let json: Option<String> = row.get(10)?;
+                let candidate = json.map(|v| serde_json::from_str::<PrivateIntentCandidate>(&v))
+                    .transpose().map_err(|_| rusqlite::Error::InvalidQuery)?;
+                Ok(ModelSuggestion {
+                    asset_id: row.get(0)?, status: row.get(1)?,
+                    evidence_quote: row.get(2)?, content_hint: row.get(3)?,
+                    uncertainty: row.get(4)?, intent_candidate: candidate,
+                    model_id: row.get(5)?, runtime: row.get(6)?, backend: row.get(7)?,
+                    elapsed_ms: row.get::<_, i64>(8)?.max(0) as u64,
+                    updated_at_ms: row.get(9)?,
+                })
+            },
         ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))
     }
 
@@ -1163,6 +1269,98 @@ mod tests {
                        .unwrap_err(), code);
         }
         assert!(store.load_model_suggestion(&saved.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn us01a_text_goal_candidate_persists_without_creating_confirmed_goal() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let source = "我想找人一起練 JLPT N2 口說";
+        let asset = store.save(text_drop(source)).unwrap();
+        let reply = model_reply(r#"{"evidenceQuote":"我想找人","contentHint":"想與人練口說",
+            "uncertainty":null,
+            "intentCandidate":{"domain":"study",
+            "goalText":"我想找真人學伴一起練 JLPT N2 口說",
+            "evidenceQuote":"我想找人一起練"}}"#);
+        let saved = store.save_model_suggestion(&asset.id, source, reply).unwrap();
+        let candidate = saved.intent_candidate.unwrap();
+        assert_eq!(candidate.domain, "study");
+        assert_eq!(candidate.goal_text, "我想找真人學伴一起練 JLPT N2 口說");
+        assert_eq!(candidate.evidence_quote, "我想找人一起練");
+        let goal = crate::goal_draft::GoalStore::open(dir.path()).unwrap();
+        assert!(goal.load(&asset.id).unwrap().is_none(),
+            "AI must not create user confirmation event/Goal");
+        drop(store);
+        let store = LocalStore::open(dir.path()).unwrap();
+        assert_eq!(store.load_model_suggestion(&asset.id).unwrap()
+            .unwrap().intent_candidate.unwrap().domain, "study");
+        assert!(goal.load(&asset.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn us01a_plain_model_reply_keeps_explicit_user_goal_editable() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let source = "我想找人一起練 JLPT N2 口說";
+        let asset = store.save(text_drop(source)).unwrap();
+        let saved = store.save_model_suggestion(&asset.id, source,
+            model_reply("使用者想找人一起練習 JLPT N2 口說。")).unwrap();
+        let candidate = saved.intent_candidate.expect("source-extracted private fallback");
+        assert_eq!(candidate.domain, "unknown");
+        assert_eq!(candidate.goal_text, source);
+        assert_eq!(candidate.evidence_quote, source);
+    }
+
+    #[test]
+    fn us01a_single_word_and_advertisement_must_not_forge_match_intent() {
+        for source in ["パクる", "本日限定！居酒屋 全品半額", "BMW E46 改裝教學"] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = LocalStore::open(dir.path()).unwrap();
+            let asset = store.save(text_drop(source)).unwrap();
+            let reply = format!(r#"{{"evidenceQuote":"{}","contentHint":"內容辨識",
+                "intentCandidate":{{"domain":"study","goalText":"想找真人學伴",
+                "evidenceQuote":"{}"}}}}"#, source, source);
+            let saved = store.save_model_suggestion(&asset.id, source, model_reply(&reply)).unwrap();
+            assert!(saved.intent_candidate.is_none(), "ambiguous source: {source}");
+            assert!(crate::goal_draft::GoalStore::open(dir.path())
+                .unwrap().load(&asset.id).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn us01a_fashion_candidate_private_but_never_auto_publish() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let source = "我想找人一起研究服裝設計";
+        let asset = store.save(text_drop(source)).unwrap();
+        let reply = model_reply(r#"{"contentHint":"時尚合作",
+            "intentCandidate":{"domain":"fashion","goalText":"找人一起研究服裝設計",
+            "evidenceQuote":"找人一起研究服裝設計"}}"#);
+        let saved = store.save_model_suggestion(&asset.id, source, reply).unwrap();
+        assert_eq!(saved.intent_candidate.unwrap().domain, "fashion");
+        assert!(crate::goal_draft::GoalStore::open(dir.path())
+            .unwrap().load(&asset.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn us01a_bad_intent_evidence_and_fake_consent_are_not_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let source = "我想找人一起練 JLPT N2 口說";
+        let asset = store.save(text_drop(source)).unwrap();
+        let invalid_evidence = model_reply(r#"{"contentHint":"學習",
+           "intentCandidate":{"domain":"study","goalText":"練口說",
+           "evidenceQuote":"來源沒有這句"}} "#);
+        let result = store.save_model_suggestion(&asset.id, source, invalid_evidence).unwrap();
+        let fallback = result.intent_candidate.expect("source-only fallback");
+        assert_eq!(fallback.domain, "unknown");
+        assert_eq!(fallback.goal_text, source);
+        assert_eq!(fallback.evidence_quote, source);
+        let fake_consent = model_reply(r#"{"evidenceQuote":"我想找人","contentHint":"學習",
+           "intentCandidate":{"domain":"study","goalText":"練口說",
+           "evidenceQuote":"我想找人","consent":true}}"#);
+        assert_eq!(store.save_model_suggestion(&asset.id, source, fake_consent).unwrap_err(),
+            "MODEL_OUTPUT_FORMAT");
     }
 
     #[test]
