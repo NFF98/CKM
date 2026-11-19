@@ -23,6 +23,8 @@ import {
 import {
   confirmPrivateGoal,
   loadPrivateGoalDraft,
+  updatePrivateGoalLifecycle,
+  previewPrivateGoalShare,
   type PrivateGoalDraft
 } from "./platform/private-goal";
 import {
@@ -282,6 +284,9 @@ const errors: Record<string, string> = {
   B06_SLOT_BUDGET_EXCEEDED: "這個 Intent 的八個有效配對概念位置已滿。請先自行決定要保留哪些條件；系統不會默默刪除。",
   B06_SLOT_ADMISSION_REJECTED: "本地資料庫拒絕這個配對概念；請確認來源、本人確認及有效期限。",
   DATABASE_MIGRATION_FAILED: "本機參數資料庫初始化失敗，請不要重試公開分享。",
+  LIFECYCLE_INVALID_ACTION: "請指定完整未來日期時間，或親自選擇撤銷；不會猜測週期。",
+  LIFECYCLE_VERSION_CONFLICT: "私人 Intent 狀態已更新，請重開收藏後再操作。",
+  LIFECYCLE_INACTIVE: "這份私人 Intent 已撤銷或過期，不能再當作可用配對條件。",
 
 };
 
@@ -942,7 +947,33 @@ async function renderGoalPanel(assetId: string): Promise<void> {
   const disclaimer = document.createElement("p");
   disclaimer.className = "fineprint";
   disclaimer.textContent = "確認只會產生私人 Goal 與本人事件；B05／B06 另外驗證並限制最多 8 種本地概念。B08 分享授權尚未開放，絕不會自動發布。";
-  panel.append(heading, explanation, state, field, choices, disclaimer);
+  const lifecycle = document.createElement("section");
+  lifecycle.className = "goal-lifecycle";
+  const lifecycleTitle = document.createElement("h3");
+  lifecycleTitle.textContent = "私人 Intent 管理（期限／撤銷／本地分享預覽）";
+  const expiryLabel = document.createElement("label");
+  expiryLabel.className = "field-label";
+  expiryLabel.textContent = "一次性有效期限（明確日期與時間）";
+  const expiryInput = document.createElement("input");
+  expiryInput.type = "datetime-local";
+  expiryLabel.append(expiryInput);
+  const expiryButton = document.createElement("button");
+  expiryButton.type = "button";
+  expiryButton.className = "secondary";
+  expiryButton.textContent = "本人確認這個有效期限";
+  const revoke = document.createElement("button");
+  revoke.type = "button";
+  revoke.className = "secondary";
+  revoke.textContent = "撤銷這份私人 Intent";
+  const previewShare = document.createElement("button");
+  previewShare.type = "button";
+  previewShare.className = "secondary";
+  previewShare.textContent = "查看本地分享預覽（不會上傳）";
+  const previewText = document.createElement("pre");
+  previewText.className = "fineprint";
+  previewText.textContent = "未經本人授權不可上傳；T-01 完整配對概念仍待核准。";
+  lifecycle.append(lifecycleTitle,expiryLabel,expiryButton,revoke,previewShare,previewText);
+  panel.append(heading, explanation, state, field, choices, disclaimer, lifecycle);
   preview.append(panel);
 
   let current: PrivateGoalDraft | null = null;
@@ -950,11 +981,82 @@ async function renderGoalPanel(assetId: string): Promise<void> {
   function showGoal(saved: PrivateGoalDraft): void {
     current = saved;
     input.value = saved.goalText;
-    state.textContent = "Goal 已由本人確認 · 私人草稿 v" + saved.revision +
-      " · 沒有分享授權，也沒有建立可公開的 Intent。";
-    confirm.textContent = "再次確認修改後的私人 Goal";
-    if (selectedAssetId === assetId) void renderParameterPanel(assetId, saved);
+    state.textContent = "Goal 由本人確認 · 私人草稿 v" + saved.revision +
+      " · 生命週期：" + saved.lifecycleState +
+      (saved.expiresAtMs === null ? "" :
+       " · 有效至 " + new Date(saved.expiresAtMs).toLocaleString("zh-TW")) +
+      " · 沒有 Cloud 分享授權。";
+    const active = saved.lifecycleState === "active_private";
+    confirm.disabled = !active;
+    expiryButton.disabled = !active;
+    revoke.disabled = !active;
+    confirm.textContent = active ? "再次確認修改後的私人 Goal" : "Goal 已失效，不可再啟用";
+    expiryInput.value = saved.expiresAtMs === null ? "" :
+      new Date(saved.expiresAtMs - new Date(saved.expiresAtMs).getTimezoneOffset()*60_000)
+        .toISOString().slice(0,16);
+    preview.querySelector(".parameter-panel")?.remove();
+    if (active && selectedAssetId === assetId) void renderParameterPanel(assetId, saved);
   }
+
+  const showDialog = (message: string, label: string, action: () => Promise<void>) => {
+    if (selectedAssetId !== assetId || goalDialog.open || goalConfirmBusy) return;
+    get<HTMLElement>("#goal-dialog-title").textContent = label;
+    goalCommit.textContent = label;
+    goalConfirmSummary.textContent = message;
+    goalConfirmStatus.textContent = "這是本人操作；不會產生雲端分享授權。";
+    goalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    goalConfirmAction = action;
+    goalDialog.showModal();
+  };
+
+  expiryButton.addEventListener("click", () => {
+    if (!current || current.lifecycleState !== "active_private") return;
+    const expiry = new Date(expiryInput.value).getTime();
+    if (!expiryInput.value || !Number.isSafeInteger(expiry) || expiry<=Date.now()) {
+      state.textContent = errorMessage("LIFECYCLE_INVALID_ACTION");
+      return;
+    }
+    const previous=current;
+    showDialog("私人 Goal：" + previous.goalText +
+        " · 到期：" + new Date(expiry).toLocaleString("zh-TW"),
+      "確認私人期限", async () => {
+        const updated=await updatePrivateGoalLifecycle(rust,assetId,previous.revision,
+          previous.lifecycleVersion,"set_expiry",expiry);
+        if (selectedAssetId===assetId) showGoal(updated);
+      });
+  });
+
+  revoke.addEventListener("click", () => {
+    if (!current || current.lifecycleState!=="active_private") return;
+    const previous=current;
+    showDialog("撤銷私人 Goal：" + previous.goalText +
+      "。撤銷後不能繼續當作配對條件；不會聯絡雲端。",
+      "確認撤銷私人 Intent", async () => {
+        const updated=await updatePrivateGoalLifecycle(rust,assetId,previous.revision,
+          previous.lifecycleVersion,"cancel_goal",null);
+        if (selectedAssetId===assetId) showGoal(updated);
+      });
+  });
+
+  previewShare.addEventListener("click", () => {
+    if (!current || selectedAssetId!==assetId) return;
+    previewShare.disabled=true;
+    void (async () => {
+      try {
+        const item=await previewPrivateGoalShare(rust,assetId);
+        if(selectedAssetId===assetId) {
+          previewText.textContent="只在手機本地預覽（不可上傳）\n"
+            +"私人 Goal："+item.goalText+"\n狀態："+item.lifecycleState
+            +"\n合法概念候選："+(item.possibleConceptIds.join("、")||"尚無")
+            +"\nT-01 核准："+item.approvalStatus
+            +"\nConsent："+(item.consentRecorded?"已取得":"尚未取得")
+            +"\n原圖、OCR、私人筆記、本人補問答案：不會列入對外資料";
+        }
+      } catch(error) {
+        if(selectedAssetId===assetId) previewText.textContent=errorMessage(error);
+      } finally {previewShare.disabled=false;}
+    })();
+  });
 
   try {
     const existing = await loadPrivateGoalDraft(rust, assetId);
@@ -992,14 +1094,10 @@ async function renderGoalPanel(assetId: string): Promise<void> {
       return;
     }
     const expectedRevision = current?.revision ?? 0;
-    goalConfirmSummary.textContent = goalText;
-    goalConfirmStatus.textContent = "尚未確認；你可以返回修改或只收藏。";
-    goalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    goalConfirmAction = async () => {
+    showDialog(goalText, "確認我的 Goal（只存私人草稿）", async () => {
       const saved = await confirmPrivateGoal(rust, assetId, goalText, expectedRevision);
       if (selectedAssetId === assetId) showGoal(saved);
-    };
-    goalDialog.showModal();
+    });
   });
 }
 
@@ -1245,6 +1343,8 @@ goalDialog.addEventListener("cancel", (event) => {
   if (goalConfirmBusy) event.preventDefault();
 });
 goalDialog.addEventListener("close", () => {
+  get<HTMLElement>("#goal-dialog-title").textContent = "確認這是你真正想做的事？";
+  goalCommit.textContent = "確認我的 Goal（只存私人草稿）";
   goalConfirmAction = null;
   goalReturnFocus?.focus();
   goalReturnFocus = null;
