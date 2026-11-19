@@ -61,9 +61,15 @@ internal class ModelAutoDownloader(
         )
     }
 
-    /** Auto-start on first launch over unmetered network; cellular requires an explicit click. */
+    /**
+     * App updates MUST reuse the existing app-private E2B. If model bytes
+     * already exist, repair the checksum marker offline before ANY network
+     * request. A model whose hash is wrong is never silently overwritten.
+     */
     fun prepare(allowMetered: Boolean, ready: Boolean): DownloadProgress {
-        if (ready) {
+        val action = ModelReusePolicy.decide(model, checksum, expectedSize, expectedHash)
+        if (ready && action == ModelBootAction.USE_INSTALLED ||
+            action == ModelBootAction.USE_INSTALLED) {
             state = "ready"
             lastError = null
             return progress(true)
@@ -71,6 +77,32 @@ internal class ModelAutoDownloader(
         if (Build.VERSION.SDK_INT < 26) {
             state = "error"
             lastError = "MODEL_UNAVAILABLE"
+            return progress(false)
+        }
+        if (action == ModelBootAction.VERIFY_EXISTING) {
+            if (!running.compareAndSet(false, true)) return progress(false)
+            pauseRequested.set(false)
+            state = "verifying"
+            lastError = null
+            executor.execute {
+                try {
+                    if (model.length() == expectedSize &&
+                        ModelDownloadWirePolicy.matchesSha256(model, expectedHash)) {
+                        writeMarker()
+                        staging.delete()
+                        transferred = expectedSize
+                        state = "ready"
+                    } else {
+                        state = "error"
+                        lastError = "MODEL_HASH_MISMATCH"
+                    }
+                } catch (_: Exception) {
+                    state = "error"
+                    lastError = "MODEL_IMPORT_FAILED"
+                } finally {
+                    running.set(false)
+                }
+            }
             return progress(false)
         }
         if (!hasNetwork(allowMetered)) {
@@ -275,5 +307,28 @@ internal object ModelDownloadWirePolicy {
             hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         } catch (_: NumberFormatException) { return false }
         return MessageDigest.isEqual(md.digest(), expected)
+    }
+}
+
+
+/** Pure, testable policy: an Android APK update never triggers a second E2B
+ * download when the existing app's private model bytes are present. */
+internal enum class ModelBootAction {
+    USE_INSTALLED,
+    VERIFY_EXISTING,
+    DOWNLOAD_IF_NEEDED,
+}
+
+internal object ModelReusePolicy {
+    fun decide(model: File, checksum: File, expectedSize: Long, expectedHash: String): ModelBootAction {
+        if (!model.isFile) return ModelBootAction.DOWNLOAD_IF_NEEDED
+        if (model.length() != expectedSize) return ModelBootAction.VERIFY_EXISTING
+        val markerMatches = try {
+            checksum.isFile && checksum.readText().trim() == expectedHash
+        } catch (_: IOException) {
+            false
+        }
+        return if (markerMatches) ModelBootAction.USE_INSTALLED
+        else ModelBootAction.VERIFY_EXISTING
     }
 }
