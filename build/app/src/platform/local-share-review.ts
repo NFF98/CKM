@@ -32,7 +32,7 @@ export function parseLocalShareReview(value:unknown):LocalShareReview {
     || !isList(v.reviewableFieldIds) || !isList(v.selectedFieldIds)
     || typeof v.consentRecorded!=="boolean"
     || (v.consentRecorded===true &&
-        (v.selectedFieldIds.length===0 || v.selectedFieldIds.some(f=>!v.reviewableFieldIds.includes(f))))
+        (v.selectedFieldIds.length===0 || v.selectedFieldIds.some(f=>!(v.reviewableFieldIds as LocalShareField[]).includes(f))))
     || (v.consentRecorded===false && v.selectedFieldIds.length!==0)
     || v.canUpload!==false || v.visibility!=="private" || v.scope!=="local_preview_only")
     throw new Error("B08 本地授權 Contract 格式錯誤");
