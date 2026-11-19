@@ -2,6 +2,24 @@
 
 > GitHub 追蹤用，不是新 Governance Gate。**只有具備真實 Evidence 才可標 PASS**；上層依據 [Build Bible](../BACKLOG.md)／[Spec Traceability](../TRACEABILITY.md)／[Sprint 1 AC](SPRINT-01_LOCAL_AI.md)。
 
+## 2026-11-19｜US-01B／C／D 後續實際 Coding（PR #17，全部仍待 Android 真機 E2E）
+
+**Stack：** [PR #15](https://github.com/NFF98/CKM/pull/15) → [PR #16](https://github.com/NFF98/CKM/pull/16) → **[PR #17](https://github.com/NFF98/CKM/pull/17)**（`feat/us01b-us01c-local-flow`，Draft；**不是 main 合併或 APK 已發布**）。本段為 2026-11-19 新開發紀錄；下方先前 NOT_STARTED 表格是當時歷史狀態。
+
+| Slice | 真正提交的程式與跨模組測試 | 工程 CI／真機驗收 |
+|---|---|---|
+| **US-01A** | 沿用 PR #16 的 B02→B03→B04 私人候選／本人確認。Rust／SQLite／TS 原本 CI PASS。 | **Android E2E NOT_RUN**；不宣稱初次候選命中率，模型仍以單一 `intentCandidate` 為主。 |
+| **US-01B** | `main.ts` 將 OCR／更正後的有效文字送入原本 `local_model_propose`，不建立圖片專用 AI；Rust 整合測試驗證 OCR→模型候選→B04 本人確認、來源更正後舊候選失效、無文字為 `vision_unknown`。 | 新版 GitHub CI 見 PR #17 Checks，真機 **NOT_RUN**。**Gemma 沒有圖片像素輸入，不能說看到圖就理解圖像本身**。 |
+| **US-01C／B05+B06** | 實際 SQLite `local_matching_slots`，0–7 容量、`UNIQUE(draft_id,slot_index)`、`UNIQUE(draft_id,concept_id)`、來源／確認事件／版本 Admission Trigger，B05 人工確認同交易分配 slot；修改 Goal／Parameter 或撤銷讓舊 slot 失效；TypeScript 嚴格驗證 `matchSlotIndex`。 | SQLite 直接 SQL 偽造／slot 8、來源刪除連動測試已提交。**T01 完整 Approved Registry 白名單未核准，現僅 N2 一種合法概念；8 種＋第 9 種不同合法概念的實際邊界測試 BLOCKED，不能用偽造 8 種類別代替。** |
+| **US-01C／B09** | 本地模型可回單一可空 `clarifyingQuestion`；Rust 只記住來源 hash 對應的真人回答，SQLite 最多 2 題（含去重與同一時間一題），另保留 B04 本人 Goal 確認為第 3 步。回答後回到同一 Gemma 引擎重新推論；UNKNOWN／不必問時可 0 題。 | Rust／SQLite quota、重試、人工回答非模型證據、來源更正失效＋TypeScript Contract 已提交；**Android 問題是否真的有用、Gemma 能否穩定輸出題目：NOT_RUN**。不是固定 8 個問題。 |
+| **US-01D／B07+B08 local** | Rust／SQLite 私人期限（真完整日期）、撤銷、版本與確認事件、重啟持久化，並與 B06 Slot 聯動；UI 增加本人操作和只讀 Share Preview，明確 `consentRecorded=false`／`canUpload=false`，排除圖片／OCR／私人筆記／追問答案。 | 跨模組 Rust／SQLite 期限／撤銷／B06 Slot 清理／預覽＋TS 測試已提交；**Android 與網路封包 E2E NOT_RUN**。**B08 真實逐項 Consent 與 Cloud 發布不在此宣稱已實作**；T01 與 Cloud Payload 定案前只允許本地 Preview。 |
+
+**安全界線：** 現在不呼叫 Supabase、不執行 Cloud AI、不聲稱找到真人。完全依照 SSOT 將 8 slots 視為合法匹配概念上限，而非 8 項固定表單；追問不會自動轉成已批准的 `Need`／`Offer`／時間欄位。
+
+**最後驗收狀態：** `US-01 = NG／NOT_RUN`（產品真機）。PR #17 的 GitHub Harness、TS/Rust CI、Kotlin compile-only 是工程 Gate；任何未通過的檢查必須修復並記錄最後 SHA。**尚無 US-01A～D 新版 Android APK 或實體 E2E PASS，不可蓋掉 2026-11-19 使用者報告的前版 NG。**
+
+**接續阻斷：** (1) PR #17 所有最新 Checks PASS；(2) T-01 完整 8+1 核准類別測試，需正式 Registry Decisions；(3) Android 批次 APK 用現有模型做文字、OCR、UNKNOWN、雙追問、本人確認、期限／撤銷、飛航模式；(4) 真機錯誤及模型能力用 log 記錄。**除非全部通過，不改 Sprint 1 狀態為 PASS。**
+
 ## 2026-11-19｜US-01A Coding 續作（PR #16；尚非真機 PASS）
 
 **PR：** [US-01A 本地意圖候選 Coding #16](https://github.com/NFF98/CKM/pull/16)，疊在 [User Story Sprint #15](https://github.com/NFF98/CKM/pull/15) 之上；保留 B01～B05 既有程式，不開始第二套架構。
