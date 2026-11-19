@@ -13,12 +13,20 @@ export interface ModelStatus {
   downloadError: string | null;
 }
 
+export interface PrivateIntentCandidate {
+  domain: "study" | "fashion" | "car" | "other" | "unknown";
+  goalText: string;
+  evidenceQuote: string;
+}
+
 export interface ModelSuggestion {
   assetId: string;
   status: "suggested_private";
   evidenceQuote: string;
   contentHint: string | null;
   uncertainty: string | null;
+  /** AI can suggest but NEVER confirm, publish, match or consent. */
+  intentCandidate: PrivateIntentCandidate | null;
   modelId: "gemma-4-E2B-it";
   runtime: string;
   backend: "cpu";
@@ -58,6 +66,19 @@ export function parseModelStatus(value: unknown): ModelStatus {
   return v as unknown as ModelStatus;
 }
 
+/** Reject fabricated approval fields and malformed optional candidate objects. */
+export function validPrivateIntentCandidate(v: unknown): v is PrivateIntentCandidate | null {
+  if (v === null) return true;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const data = v as Record<string, unknown>;
+  if (Object.keys(data).sort().join(",") !== "domain,evidenceQuote,goalText") return false;
+  return ["study", "fashion", "car", "other", "unknown"].includes(String(data.domain)) &&
+    typeof data.goalText === "string" && data.goalText.trim().length > 0 &&
+    data.goalText.length <= 500 && new TextEncoder().encode(data.goalText).byteLength <= 2048 &&
+    typeof data.evidenceQuote === "string" && data.evidenceQuote.trim().length > 0 &&
+    [...data.evidenceQuote].length <= 80;
+}
+
 export function parseModelSuggestion(value: unknown): ModelSuggestion {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("本地模型建議 Contract 錯誤");
@@ -70,6 +91,7 @@ export function parseModelSuggestion(value: unknown): ModelSuggestion {
       typeof v.evidenceQuote !== "string" || !v.evidenceQuote.trim() ||
       (v.contentHint !== null && typeof v.contentHint !== "string") ||
       (v.uncertainty !== null && typeof v.uncertainty !== "string") ||
+      !validPrivateIntentCandidate(v.intentCandidate) ||
       !Number.isSafeInteger(v.elapsedMs) || Number(v.elapsedMs) < 0 ||
       !Number.isSafeInteger(v.updatedAtMs)) {
     throw new Error("本地模型建議 Contract 錯誤");
