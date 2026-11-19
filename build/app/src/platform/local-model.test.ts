@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   importModel, loadModelSuggestion, modelStatus, parseModelStatus, proposeModel,
-  prepareModel, pauseModelDownload
+  prepareModel, pauseModelDownload, parseModelSuggestion
 } from "./local-model";
 
 const id = "2bc595b3-a0e4-4254-bc8f-200b1b0f19a2";
@@ -22,6 +22,7 @@ const proposal = {
   evidenceQuote: "パクる",
   contentHint: "日語詞彙",
   uncertainty: null,
+  intentCandidate: null,
   modelId: "gemma-4-E2B-it",
   runtime: "litert-lm-android-0.16.1",
   backend: "cpu",
@@ -105,6 +106,35 @@ describe("B03 本地 Gemma 4 E2B Model Contract", () => {
     expect(invoke).toHaveBeenCalledWith("load_model_suggestion", { id });
     invoke.mockResolvedValueOnce(null);
     await expect(loadModelSuggestion(invoke, id)).resolves.toBeNull();
+  });
+
+  it("US-01A: 文字有合作意圖時接收 PRIVATE 候選，不是已確認 Goal", async () => {
+    const candidate = {
+      ...proposal,
+      intentCandidate: {
+        domain: "study", goalText: "我想找人一起練 JLPT N2 口說",
+        evidenceQuote: "我想找人一起練"
+      }
+    };
+    const invoke = vi.fn().mockResolvedValue(candidate);
+    expect((await proposeModel(invoke, id)).intentCandidate).toEqual(candidate.intentCandidate);
+    expect(invoke).toHaveBeenCalledWith("local_model_propose", { id });
+    expect(candidate.status).toBe("suggested_private");
+  });
+
+  it("US-01A: 拒絕模型偽造 Goal 確認與不合法候選欄位", () => {
+    for (const invalid of [
+      { ...proposal, intentCandidate: { domain: "study", goalText: "練口說",
+        evidenceQuote: "我想", confirmed: true } },
+      { ...proposal, intentCandidate: { domain: "study", goalText: "",
+        evidenceQuote: "我想" } },
+      { ...proposal, intentCandidate: { domain: "study", goalText: "練口說",
+        evidenceQuote: "我想", consent: true } },
+      { ...proposal, intentCandidate: { domain: "unapproved", goalText: "練口說",
+        evidenceQuote: "我想" } },
+    ]) {
+      expect(() => parseModelSuggestion(invalid)).toThrow("Contract");
+    }
   });
 
   it("錯誤 UUID 不會進入 Rust 命令", async () => {
