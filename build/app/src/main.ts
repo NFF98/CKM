@@ -802,6 +802,50 @@ async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Pr
   preview.append(panel);
 
   let rows: PrivateParameter[] = [];
+  // From a PERSON-CONFIRMED Goal, surface the one currently approved N2 concept.
+  // This is transparent deterministic evidence extraction, NOT a Gemma-confirmed slot.
+  // The person must still explicitly confirm the observed parameter below.
+  if (/(?:\\b(?:jlpt[\\s-]*)?n2\\b|日[語文]二級)/iu.test(goal.goalText)) {
+    const suggestion = document.createElement("div");
+    suggestion.className = "goal-parameter-suggestion";
+    const line = document.createElement("p");
+    line.textContent = "從你確認的 Goal 辨認到 JLPT N2。可一鍵產生私人條件候選；仍需你親自確認，才會佔用配對 slot。";
+    const accept = document.createElement("button");
+    accept.type = "button";
+    accept.className = "secondary";
+    accept.textContent = "採用 Goal 裡的 N2 條件候選";
+    suggestion.append(line, accept);
+    panel.insertBefore(suggestion, aliasField);
+    accept.addEventListener("click", () => {
+      if (selectedAssetId !== assetId || accept.disabled) return;
+      const existing = rows.find(item => item.conceptId === "study.jlpt_level");
+      if (existing) {
+        status.textContent = "這個私人概念已存在，不會因重複採用而新增 slot。";
+        return;
+      }
+      accept.disabled = true;
+      void (async () => {
+        try {
+          const saved = await saveParameter(rust, {
+            draftId: goal.id, expectedDraftRevision: goal.revision,
+            conceptAlias: "JLPT N2", value: null, scope: "intent",
+            expiryPolicy: "intent_lifecycle", expiresAtMs: null,
+            expectedVersion: 0,
+          });
+          await refresh();
+          if (selectedAssetId === assetId) {
+            status.textContent = saved.state === "OBSERVED"
+              ? "已從本人 Goal 建立 N2 私人候選；請再按「由本人確認這個私人條件」。"
+              : "未核准的候選保持 UNKNOWN，不會參與配對。";
+          }
+        } catch (error) {
+          if (selectedAssetId === assetId) status.textContent = errorMessage(error);
+        } finally {
+          accept.disabled = false;
+        }
+      })();
+    });
+  }
   const active = () => selectedAssetId === assetId && panel.isConnected;
   async function refresh(): Promise<void> {
     if (!active()) return;
