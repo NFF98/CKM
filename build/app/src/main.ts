@@ -35,6 +35,10 @@ import {
   saveParameter,
   type PrivateParameter,
 } from "./platform/private-parameters";
+import {
+  loadLocalShareReview, recordLocalShareReview,
+  type LocalShareField, type LocalShareReview,
+} from "./platform/local-share-review";
 import "./styles.css";
 
 type View = "drop" | "diagnostic";
@@ -1027,14 +1031,64 @@ async function renderGoalPanel(assetId: string): Promise<void> {
   const previewText = document.createElement("pre");
   previewText.className = "fineprint";
   previewText.textContent = "未經本人授權不可上傳；T-01 完整配對概念仍待核准。";
-  lifecycle.append(lifecycleTitle,expiryLabel,expiryButton,revoke,previewShare,previewText);
+  const localReviewTitle = document.createElement("h3");
+  localReviewTitle.textContent = "B08 本地逐項分享審核（不是上傳授權）";
+  const localReviewNote = document.createElement("p");
+  localReviewNote.className = "fineprint";
+  localReviewNote.textContent = "勾選的只有你願意將來考慮分享的欄位；目前仍全部留在手機。未來接雲端時，必須另外取得正式授權。";
+  const localFieldOptions = document.createElement("div");
+  const localReviewStatus = document.createElement("p");
+  localReviewStatus.className = "status";
+  localReviewStatus.setAttribute("role","status");
+  const approveLocal = document.createElement("button");
+  approveLocal.type = "button";
+  approveLocal.className = "secondary";
+  approveLocal.textContent = "本人確認本地逐項審核";
+  const revokeLocal = document.createElement("button");
+  revokeLocal.type = "button";
+  revokeLocal.className = "secondary";
+  revokeLocal.textContent = "撤回本地逐項審核";
+  const reviewSection = document.createElement("section");
+  reviewSection.hidden = true;
+  reviewSection.append(localReviewTitle,localReviewNote,localFieldOptions,
+    localReviewStatus,approveLocal,revokeLocal);
+  lifecycle.append(lifecycleTitle,expiryLabel,expiryButton,revoke,previewShare,
+    previewText,reviewSection);
   panel.append(heading, explanation, state, field, choices, disclaimer, lifecycle);
   preview.append(panel);
 
   let current: PrivateGoalDraft | null = null;
-
+  let localReview: LocalShareReview | null = null;
+  const selectedReviewFields = (): LocalShareField[] =>
+    Array.from(localFieldOptions.querySelectorAll<HTMLInputElement>(
+      'input[type="checkbox"]:checked'
+    )).map(item => item.value as LocalShareField);
+  function showLocalReview(review: LocalShareReview): void {
+    localReview=review;
+    reviewSection.hidden=false;
+    localFieldOptions.replaceChildren();
+    for (const field of review.reviewableFieldIds) {
+      const label=document.createElement("label");
+      label.className="field-label";
+      const input=document.createElement("input");
+      input.type="checkbox";
+      input.value=field;
+      input.checked=review.selectedFieldIds.includes(field);
+      label.append(input,document.createTextNode(field==="goal_text"
+        ? " Goal（完整本人目標文字）"
+        : " JLPT N2 條件（已由本人確認）"));
+      localFieldOptions.append(label);
+    }
+    localReviewStatus.textContent=review.consentRecorded
+      ? "已記錄本人對這些欄位的本地審核（v"+review.consentVersion+"）；仍沒有 Cloud 上傳權限。"
+      : "尚未有有效的本地審核；修改 Goal、期限或條件會使舊紀錄失效。";
+    approveLocal.disabled=review.reviewableFieldIds.length===0;
+    revokeLocal.disabled=review.consentVersion===0;
+  }
   function showGoal(saved: PrivateGoalDraft): void {
     current = saved;
+    localReview = null;
+    reviewSection.hidden = true;
     input.value = saved.goalText;
     state.textContent = "Goal 由本人確認 · 私人草稿 v" + saved.revision +
       " · 生命週期：" + saved.lifecycleState +
@@ -1098,19 +1152,52 @@ async function renderGoalPanel(assetId: string): Promise<void> {
     previewShare.disabled=true;
     void (async () => {
       try {
-        const item=await previewPrivateGoalShare(rust,assetId);
+        const [item,review]=await Promise.all([
+          previewPrivateGoalShare(rust,assetId),
+          loadLocalShareReview(rust,assetId),
+        ]);
         if(selectedAssetId===assetId) {
           previewText.textContent="只在手機本地預覽（不可上傳）\n"
             +"私人 Goal："+item.goalText+"\n狀態："+item.lifecycleState
             +"\n合法概念候選："+(item.possibleConceptIds.join("、")||"尚無")
             +"\nT-01 核准："+item.approvalStatus
-            +"\nConsent："+(item.consentRecorded?"已取得":"尚未取得")
+            +"\n逐項本地審核："+(review.consentRecorded?"已記錄":"尚未有效記錄")
+            +"\nCloud 傳輸權限：無"
             +"\n原圖、OCR、私人筆記、本人補問答案：不會列入對外資料";
+          showLocalReview(review);
         }
       } catch(error) {
         if(selectedAssetId===assetId) previewText.textContent=errorMessage(error);
       } finally {previewShare.disabled=false;}
     })();
+  });
+
+  approveLocal.addEventListener("click", () => {
+    const review=localReview;
+    if(!review || selectedAssetId!==assetId) return;
+    const selected=selectedReviewFields();
+    if(selected.length===0) {
+      localReviewStatus.textContent="請先選擇至少一項明確想審核的欄位。";
+      return;
+    }
+    const names=selected.map(id=>id==="goal_text"?"Goal 全文":"JLPT N2").join("、");
+    showDialog("僅記錄手機內本地審核："+names+"。這不是公開或雲端傳輸同意。",
+      "確認本地逐項審核",async()=>{
+        const saved=await recordLocalShareReview(rust,assetId,review,selected,
+          "approve_local_preview");
+        if(selectedAssetId===assetId) showLocalReview(saved);
+      });
+  });
+
+  revokeLocal.addEventListener("click", () => {
+    const review=localReview;
+    if(!review || selectedAssetId!==assetId) return;
+    showDialog("撤銷先前對分享欄位的本地審核記錄。你仍可保留私人 Goal。",
+      "確認撤回本地審核",async()=>{
+        const updated=await recordLocalShareReview(rust,assetId,review,[],
+          "revoke_local_preview");
+        if(selectedAssetId===assetId) showLocalReview(updated);
+      });
   });
 
   try {
