@@ -32,6 +32,8 @@ export interface ModelSuggestion {
   uncertainty: string | null;
   /** AI can suggest but NEVER confirm, publish, match or consent. */
   intentCandidate: PrivateIntentCandidate | null;
+  /** Multiple evidence-checked, still private hypotheses (max 3). Legacy first item kept. */
+  intentCandidates: PrivateIntentCandidate[];
   pendingQuestion: PendingIntentQuestion | null;
   modelId: "gemma-4-E2B-it";
   runtime: string;
@@ -108,6 +110,12 @@ export function parseModelSuggestion(value: unknown): ModelSuggestion {
       (v.contentHint !== null && typeof v.contentHint !== "string") ||
       (v.uncertainty !== null && typeof v.uncertainty !== "string") ||
       !validPrivateIntentCandidate(v.intentCandidate) ||
+      !Array.isArray(v.intentCandidates) || v.intentCandidates.length > 3 ||
+      !v.intentCandidates.every(candidate =>
+        candidate !== null && validPrivateIntentCandidate(candidate)) ||
+      (v.intentCandidates.length === 0 && v.intentCandidate !== null) ||
+      (v.intentCandidates.length > 0 &&
+       JSON.stringify(v.intentCandidates[0]) !== JSON.stringify(v.intentCandidate)) ||
       !validPendingQuestion(v.pendingQuestion) ||
       (v.intentCandidate !== null && v.pendingQuestion !== null) ||
       !Number.isSafeInteger(v.elapsedMs) || Number(v.elapsedMs) < 0 ||
