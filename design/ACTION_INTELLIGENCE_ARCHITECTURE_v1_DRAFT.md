@@ -12,6 +12,107 @@
 
 P1 限 **18+ JLPT N2 Study Match**；P2 Map、P3 Travel、P4 Skill/Create、P5 Intent Network 僅為後續有條件擴張。不能為了 Action Intelligence 偷加地圖、Dating、AI Tutor、購物等新 MVP 範圍。
 
+## 1A. 跨領域共用的真正大腦：Universal Intent Engine（2026-11-19 User 方向；設計草案）
+
+**核心要求：Study 是第一個發布的領域，不是模型的世界觀。** 日後 Fashion、Car、Map/Travel、Skill/Create 應可重用同一套「理解來源 → 多種可能意圖 → 補最少關鍵資訊 → 本人確認 → 雲端真人配對 → Outcome 回本地」引擎，不必每次重寫一套 AI 大腦。新增領域要有經審核的 Domain Pack，但不能讓未上線領域偷渡 P1 Cloud 配對。
+
+### 1A.1 把容易混淆的五件事分開
+
+| 層級 | 用戶看得懂的意思 | 嚴格規則 |
+|---|---|---|
+| **ContentFact** | 「圖片／文字真正寫了什麼、畫了什麼？」 | 可核對來源；沒有視覺輸入時不能宣稱看懂視覺 |
+| **DomainHypothesis** | 「可能在談學習、時尚、汽車還是其他？」 | 可以多選或 UNKNOWN，不能由目前只開放 Study 就強制判成 Study |
+| **IntentHypothesis** | 「這個人究竟想學、尋找、比較、求助、提供協助還是共同完成？」 | 內容主題不等於意圖；模型只能產生 `suggested_private`，不產生合法 Goal |
+| **ExecutionCapability** | 「CAKAMI 現在真的能幫使用者完成哪件事？」 | 必須對應已實作 Action／Cloud Capability；不顯示按了卻不會做的空按鈕 |
+| **ConfirmedMatchIntent** | 「本人確認、符合規則且同意分享的合作需求」 | B04 Goal 明確確認→B05 Registry→B06 8-slot→B08 Consent→B12 Server validation，才能雲端匹配 |
+
+**同一句 `パクる` 的正確行為：**
+- 只有 `パクる` 三個字 → **Domain=UNKNOWN，Intent=UNKNOWN**；可客觀解釋詞義，不能直接推定「想學日語／想找學伴」。
+- 日文教材中出現 `パクる` → Domain 可能 Study；可提出「你是想保存詞彙，還是想找人練習？」**但 Goal 未經本人確認仍 UNKNOWN**。
+- 時裝參考圖與「設計をパクる」上下文 → Domain 可偏 Fashion／設計模仿話題；**不能**直接推定要購買、抄襲設計或找合作對象。
+- 汽車改裝文章與「パクる」 → Domain 可偏 Car／改裝參考；**不能**直接推定要找技師或買零件。
+- 含多領域線索或證據不足 → 保留多個假設，最多問一個能真正區別意圖的關鍵問題，或先只收藏。
+
+### 1A.2 五段可替換的本地決策 Pipeline
+
+```text
+B02 原始 Drop / 文字 / 圖片 / OCR + 實際來源版本
+  ↓
+(1) EVIDENCE：可驗證內容與來源模態（TEXT / OCR / VISION / UNKNOWN）
+  ↓
+(2) HYPOTHESES：Gemma 只推測少數 Domain / Subject / Potential Goal / Unknown
+  ↓
+(3) CONTEXT：Rust 查本地「本人曾確認的 Goal、偏好、有效期、過往 Outcome」
+  ↓
+(4) DECISION：Rust 在現有能力清單中選擇：建議 / 問 1 個問題 / 只保存
+  ↓
+(5) HUMAN GATE：本人選擇、可編輯、確認；B04/B05/B06/B08 驗證
+  ↓
+Cloud：經授權的跨人配對 + 真實合作
+  ↓
+Verified Outcome → 本地記憶 → 影響下次的 CONTEXT / DECISION
+```
+
+**不是再跑一個昂貴 Agent 循環：** 先做輕量規則／OCR 標籤／當前已確認上下文，再**必要時**用一輪受限的 Gemma JSON 推論；只在無法區分的關鍵狀況問使用者。SQLite 保存可重用的已處理 Fact 和結果，避免每開一頁就重新叫 Gemma。推論快慢、記憶體與正確率須 Android 實測，不承諾 E2B 必定勝任所有領域。
+
+### 1A.3 通用資料結構（PROPOSED typed contract，不代表已 Coding）
+
+```json
+{
+  "assetId": "local-id",
+  "sourceRevision": "source-content-hash",
+  "evidence": [
+    {"ref": "local-evidence-id", "modality": "ocr", "quote": "パクる", "verified": true}
+  ],
+  "domainCandidates": [
+    {"domainId": "unknown", "supportingEvidence": []}
+  ],
+  "intentCandidates": [
+    {
+      "candidateId": "local-candidate-id",
+      "domainId": "unknown",
+      "goalKind": "unknown",
+      "subject": "パクる",
+      "need": [],
+      "offer": [],
+      "unknowns": ["user_goal"],
+      "sourceEvidenceRefs": ["local-evidence-id"],
+      "state": "suggested_private"
+    }
+  ],
+  "nextStep": {"kind": "ask_or_save", "question": "你想用這個內容做什麼？"}
+}
+```
+
+此例僅用來**說明不知道的情況**，不是要求對單字必定追問。結構化解析要有 schema 版本、大小限制、UNKNOWN、來源 hash、證據與合法 state；不要把小模型輸出的「信心 97%」當成校準過的真實機率。模型產出的候選資料**不得包含 confirmed=true、Consent=true、visibility=published 或 Server Match ID**。
+
+### 1A.4 核心共用 + Domain Pack：擴張不是重做
+
+| 元件 | 永久共用 Core | Domain Pack（需正式審核、版本化、測試） |
+|---|---|---|
+| 證據 | OCR／本地視覺輸入、引用、去重、來源版本 | 名詞別名與 domain-specific 線索 |
+| 意圖 | UNKNOWN／多候選、本人確認、Goal／Need／Offer、有效期 | Study 的學習目標／Fashion 的設計合作／Car 的改裝求助等**候選類型** |
+| 行動 | `SAVE_PRIVATE`、`CLARIFY`、`CONFIRM_GOAL`、`PREVIEW_SHARE`、`FIND_MATCH`（只有能力真的存在才提供） | 領域專用行動與必需資料，不允許 Remote Pack 決定自動公開 |
+| 配對 | 合法 Goal/Need/Offer/Feasibility + 硬條件排除 + 真雙向 Consent + 可驗證 Outcome | 每個領域必需的安全／資格／時間／位置等硬限制 |
+| 記憶 | 本地已確認偏好、改錯、失敗／完成、來源有效期 | 各領域決策依據，不跨領域硬套既有假設 |
+
+**B05 目前 `study.jlpt_level=N2` 是一個 Domain Pack 的 Concept，不應直接寫死在 Core。** B05 的 Parameter Registry（配對欄位）與 Action Capability Registry（可執行動作）是**不同兩個 Registry**；後者必須檢查 handler 真實存在與必要授權。
+
+Cloud 可有共用 `PublishedIntent` 投影，如 `domain_id`、`goal_kind`、`need/offer`、`required_constraints`、`optional_preferences`、`expires_at`、`consent_receipt`、`version`；但任何 domain 專用欄位必須先經 B05 Registry、Rust 白名單及 Server 再驗證。**P1 只能發布 `study_n2`，Fashion/Car 可做離線辨識 Spike，但不得連到真人配對或公佈新類型直到該領域正式核准。**
+
+### 1A.5 關鍵硬體現實：目前 B03 的「看圖」其實是「讀圖上的字」
+
+`local_store::model_input_for_asset` 對圖片只取 `corrected_text/raw_text` OCR 結果，而 Android `CakamiModelPlugin.propose` 的參數只有 `text`；**原始圖片像素目前沒有進入 Gemma 推論**。因此現在不能聲稱「只 Drop 沒有文字的服裝照片／汽車照片，就能辨識剪裁、車型、設計特色」。跨領域圖片理解需要驗證 Gemma 4 E2B + LiteRT-LM 是否可用圖片輸入及裝置記憶體／準確率，或另做受核准的 On-device Image Encoder/VLM Adapter；沒有該能力時回 `vision_unknown`，只用已取得的文字證據，不猜。這是**獨立技術 Gate，不可用新 Prompt 偽裝完成**。
+
+### 1A.6 Accuracy = 有證據地判斷 + 不確定時不亂決定
+
+- **優先第一手內容**：圖片文字、使用者這次說明；次要才用已確認的本地歷史。歷史只當 prior，**不能**因上次 Study，就把這次 Fashion 強制判成 Study。
+- **多種假設而非硬分類**：允許 Study/Fashion/Car/Unknown 同時作候選；只有有足夠證據時推薦 domain-specific 行動。低證據、相互矛盾或未知新領域 → `UNKNOWN`／`CLARIFY`；不要把「模糊」當作模型失敗。
+- **明確的 Goal 界線**：看到物品、單字或商標，只是內容；要跟人做什麼需本人選擇／確認。模型擅自建立 Need、Offer、購買意向或公開資料一律禁止。
+- **按成本與必要性提問**：只問答案真正影響「下一步可執行性／是否可合法配對」的問題；P1 B09 問題總預算最多 3 題（含 Goal 確認），Pair-only 最多 2 題。沒有資訊就「先收藏」不是強迫填表。
+- **Outcome 驗證回饋**：由 Cloud B18 提供可信、授權可見的合作結果回本地；本地只更新「哪些建議被接受／更改／完成」，不能把單次成功當普遍規律。跨使用者的 Outcome 聚合須另經同意與資料治理決策。
+- **可測試的選擇邏輯（初版）**：對每個候選先以 Rust 硬規則排除「證據不足／能力不存在／需授權但未同意／資料已失效」，再根據本地**已確認**歷史、內容線索與 Unknown 進行可追溯排序；不必一開始訓練私有權重。當不確定性影響選擇時退回提問或只收藏。
+
 ## 2. 單一端到端循環與擁有者
 
 ```text
