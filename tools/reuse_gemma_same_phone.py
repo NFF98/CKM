@@ -45,8 +45,8 @@ def shell(*args: str, check: bool = True) -> str:
     return r.stdout.decode("utf-8", "replace").strip() if r.returncode == 0 else ""
 
 
-def app_file(pkg: str, command: str, *args: str) -> str:
-    return shell("run-as", pkg, command, *args)
+def app_file(pkg: str, command: str, *args: str, check: bool = True) -> str:
+    return shell("run-as", pkg, command, *args, check=check)
 
 
 def require_debug(pkg: str) -> None:
@@ -62,7 +62,7 @@ def require_debug(pkg: str) -> None:
 
 
 def file_size(pkg: str, path: str) -> int | None:
-    value = app_file(pkg, "stat", "-c", "%s", path)
+    value = app_file(pkg, "stat", "-c", "%s", path, check=False)
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -70,7 +70,7 @@ def file_size(pkg: str, path: str) -> int | None:
 
 
 def marker(pkg: str) -> str:
-    return app_file(pkg, "cat", MARKER).strip()
+    return app_file(pkg, "cat", MARKER, check=False).strip()
 
 
 def transfer() -> None:
