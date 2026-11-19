@@ -27,6 +27,7 @@
 
 | Test ID | 新增測試與驗收對象 | 新 PR Engineering 狀態 | Android E2E |
 |---|---|---|---|
+| **US-01A-MULTI-01** | 原文明確想真人合作時，可得到 1～3 個具原文字面證據的不同私人 Goal 候選；每個可分別採納、修改並透過 B04 本人確認。來源不充分則 UNKNOWN；舊單一候選 SQLite 可讀。 | Rust／SQLite／TypeScript 合成跨模組測試已提交；跨語境真機品質未量測 | **NOT_RUN** |
 | **US-01B-OCR-01** | Image → 真本地 OCR 輸出文字 → 共用 Gemma Rust Candidate → B04 本人確認 → SQLite 重開；未經確認只保存私有候選。 | Rust 跨模組合成 OCR 輸入測試已提交；不假裝是 ML Kit 真機結果 | **NOT_RUN** |
 | **US-01B-OCR-02** | 修正 OCR → 先前來源 hash 的模型候選失效，舊回覆不能覆寫；Fashion/Car 的非合作內容為 UNKNOWN。 | Rust SQLite 回歸測試已提交 | **NOT_RUN** |
 | **US-01B-VISION-01** | 無字圖片／OCR 空結果不得以文字模型自稱看懂圖片像素。 | Rust `MODEL_INPUT_UNKNOWN` 測試／UI `vision_unknown` | **NOT_RUN** |
