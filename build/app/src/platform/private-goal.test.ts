@@ -129,7 +129,7 @@ describe("S1-AC04/B04：Content 和 Goal 分離", () => {
       {...payload,consentRecorded:true},
       {...payload,possibleConceptIds:["N2",123]},
       {...payload,visibility:"public"},
-    ]) expect(()=>previewPrivateGoalShare(vi.fn().mockResolvedValue(bad),assetId))
+    ]) await expect(previewPrivateGoalShare(vi.fn().mockResolvedValue(bad),assetId))
       .rejects.toThrow("Contract");
   });
 
