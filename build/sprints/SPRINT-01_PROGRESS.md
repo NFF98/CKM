@@ -14,6 +14,13 @@
 | **US-01C／B09** | 本地模型可回單一可空 `clarifyingQuestion`；Rust 只記住來源 hash 對應的真人回答，SQLite 最多 2 題（含去重與同一時間一題），另保留 B04 本人 Goal 確認為第 3 步。回答後回到同一 Gemma 引擎重新推論；UNKNOWN／不必問時可 0 題。 | Rust／SQLite quota、重試、人工回答非模型證據、來源更正失效＋TypeScript Contract 已提交；**Android 問題是否真的有用、Gemma 能否穩定輸出題目：NOT_RUN**。不是固定 8 個問題。 |
 | **US-01D／B07+B08 local** | Rust／SQLite 私人期限（真完整日期）、撤銷、版本與確認事件、重啟持久化，並與 B06 Slot 聯動；UI 增加本人操作和只讀 Share Preview，明確 `consentRecorded=false`／`canUpload=false`，排除圖片／OCR／私人筆記／追問答案。 | 跨模組 Rust／SQLite 期限／撤銷／B06 Slot 清理／預覽＋TS 測試已提交；**Android 與網路封包 E2E NOT_RUN**。**B08 真實逐項 Consent 與 Cloud 發布不在此宣稱已實作**；T01 與 Cloud Payload 定案前只允許本地 Preview。 |
 
+**PR #17 的實際 CI Evidence（核對 2026-11-19 GitHub Actions Logs）：**
+- [B01 TypeScript／Rust Run #44450590257](https://github.com/NFF98/CKM/actions/runs/44450590257) **PASS**：TypeScript **6 個測試檔／60 個測試 PASS**；Rust **80 個測試 PASS**，0 failed；TypeScript typecheck 與 Vite Build PASS（`c33daa59`，僅 docs 差異於程式頭 `201be725`）。
+- [Harness Run #44450590265](https://github.com/NFF98/CKM/actions/runs/44450590265) **PASS**。
+- [Android Kotlin compile-only Run #44450436567](https://github.com/NFF98/CKM/actions/runs/44450436567) **PASS**（`201be725`，目前最新版 Kotlin 程式與 TS/Rust）；不含安裝／Gemma 實機推論。
+- [新版 Android ARM64 Debug APK 批次 Run #44450760331](https://github.com/NFF98/CKM/actions/runs/44450760331)：已依 `apk-batch-ready` 啟動，**建置結果待最終 GitHub workflow**；沒有裝置安裝或 E2E 證據。更新同 App ID 如發生簽章衝突，**禁止直接解除安裝或清除資料**，避免丟失已下載的 Gemma 權重與私人 SQLite。
+- 這些 **Coding CI PASS 並非 US-01 Android E2E PASS**；此頁面仍以完整真人 Android 測試為 User Story Release Gate。
+
 **安全界線：** 現在不呼叫 Supabase、不執行 Cloud AI、不聲稱找到真人。完全依照 SSOT 將 8 slots 視為合法匹配概念上限，而非 8 項固定表單；追問不會自動轉成已批准的 `Need`／`Offer`／時間欄位。
 
 **最後驗收狀態：** `US-01 = NG／NOT_RUN`（產品真機）。PR #17 的 GitHub Harness、TS/Rust CI、Kotlin compile-only 是工程 Gate；任何未通過的檢查必須修復並記錄最後 SHA。**尚無 US-01A～D 新版 Android APK 或實體 E2E PASS，不可蓋掉 2026-11-19 使用者報告的前版 NG。**
