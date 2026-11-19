@@ -1623,4 +1623,106 @@ mod tests {
             .load(&image.id).unwrap().is_none());
     }
 
+    #[test]
+    fn b09_one_question_then_person_answer_feeds_same_private_gemma_source() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(png_drop(&tiny_png())).unwrap();
+        store.save_recognition(&image.id,recognized_ocr("パクる")).unwrap();
+        let first=store.model_input_for_asset(&image.id).unwrap();
+        let proposal=store.save_model_suggestion(&image.id,&first,model_reply(
+            r#"{"evidenceQuote":"パクる","contentHint":"一個多義詞",
+                "clarifyingQuestion":"你想只收藏，還是找真人練習？"}"#,
+        )).unwrap();
+        let question=proposal.pending_question.expect("model can ask one private question");
+        assert_eq!(question.ordinal,1);
+        assert_eq!(question.text,"你想只收藏，還是找真人練習？");
+        assert!(proposal.intent_candidate.is_none());
+        assert!(!first.contains(&question.text),
+            "Model-written question must not be passed off as user evidence");
+        assert_eq!(store.model_input_for_asset(&image.id).unwrap(),"パクる");
+        store.answer_intent_question(&image.id,1,"我想找人一起練 JLPT N2 口說").unwrap();
+        assert_eq!(store.answer_intent_question(&image.id,1,"再答一次").unwrap_err(),
+            "B09_QUESTION_STALE");
+        let answer_context=store.model_input_for_asset(&image.id).unwrap();
+        assert!(answer_context.contains("【本人補充（非模型推測）】"));
+        assert!(answer_context.contains("我想找人一起練 JLPT N2 口說"));
+        assert!(!answer_context.contains(&question.text));
+        assert!(store.load_model_suggestion(&image.id).unwrap().is_none(),
+            "Source-versioned model output must be recomputed after human answer");
+        let second=store.save_model_suggestion(&image.id,&answer_context,model_reply(
+            r#"{"contentHint":"真人口說練習",
+                "intentCandidate":{"domain":"study",
+                "goalText":"想找真人學伴練 JLPT N2 口說",
+                "evidenceQuote":"我想找人一起練 JLPT N2 口說"}}"#,
+        )).unwrap();
+        assert!(second.pending_question.is_none());
+        assert_eq!(second.intent_candidate.unwrap().domain,"study");
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&image.id).unwrap().is_none(),"AI cannot confirm Goal");
+    }
+
+    #[test]
+    fn b09_only_two_clarifications_then_human_goal_confirm_is_third_checkpoint() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(text_drop("パクる")).unwrap();
+        let first=store.model_input_for_asset(&image.id).unwrap();
+        let reply1=r#"{"contentHint":"多義詞","clarifyingQuestion":"你想了解詞義嗎？"}"#;
+        let v1=store.save_model_suggestion(&image.id,&first,model_reply(reply1)).unwrap();
+        assert_eq!(v1.pending_question.unwrap().ordinal,1);
+        let repeated=store.save_model_suggestion(&image.id,&first,
+            model_reply(r#"{"contentHint":"多義詞","clarifyingQuestion":"想找人聊聊嗎？"}"#)
+        ).unwrap();
+        assert_eq!(repeated.pending_question.unwrap().ordinal,1,
+            "Retry cannot issue an extra question while one is outstanding");
+        store.answer_intent_question(&image.id,1,"想了解詞義").unwrap();
+        let next=store.model_input_for_asset(&image.id).unwrap();
+        let v2=store.save_model_suggestion(&image.id,&next,
+            model_reply(r#"{"contentHint":"多義詞",
+                "clarifyingQuestion":"你要保存還是找人練習？"}"#)).unwrap();
+        assert_eq!(v2.pending_question.unwrap().ordinal,2);
+        store.answer_intent_question(&image.id,2,"先只收藏這個詞").unwrap();
+        let last=store.model_input_for_asset(&image.id).unwrap();
+        let v3=store.save_model_suggestion(&image.id,&last,model_reply(
+            r#"{"contentHint":"詞義",
+                "clarifyingQuestion":"第三個追問不應發出"}"#,
+        )).unwrap();
+        assert!(v3.pending_question.is_none(),
+            "SQLite should permit at most two model clarifications; Goal confirm is separate");
+        assert_eq!(store.answer_intent_question(&image.id,3,"不可以").unwrap_err(),
+            "B09_INVALID_ANSWER");
+        let conn=store.connect().unwrap();
+        let count:i64=conn.query_row(
+            "SELECT count(*) FROM local_intent_questions WHERE asset_id=?1",
+            params![image.id],|r|r.get(0)).unwrap();
+        assert_eq!(count,2);
+        assert!(conn.execute(
+            "INSERT INTO local_intent_questions
+             (asset_id,base_source_sha256,ordinal,question,issued_at_ms)
+             VALUES (?1,?2,3,'wrong',123)",
+            params![image.id,format!("{:x}",Sha256::digest(b"パクる"))],
+        ).is_err(),"direct SQL cannot insert a third question");
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&image.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn b09_source_revision_change_rejects_old_ocr_question_answer() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(png_drop(&tiny_png())).unwrap();
+        store.correct_ocr(&image.id,"パクる").unwrap();
+        let source=store.model_input_for_asset(&image.id).unwrap();
+        store.save_model_suggestion(&image.id,&source,model_reply(
+            r#"{"contentHint":"多義詞","clarifyingQuestion":"要找人討論嗎？"}"#,
+        )).unwrap();
+        store.correct_ocr(&image.id,"BMW E46 改裝參考").unwrap();
+        assert!(store.load_model_suggestion(&image.id).unwrap().is_none());
+        assert_eq!(store.answer_intent_question(&image.id,1,"找人").unwrap_err(),
+            "B09_QUESTION_STALE");
+        assert_eq!(store.save_model_suggestion(&image.id,&source,
+            model_reply(r#"{"contentHint":"過期"}"#)).unwrap_err(),"MODEL_STALE_INPUT");
+    }
+
 }
