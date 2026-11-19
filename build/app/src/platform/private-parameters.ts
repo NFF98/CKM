@@ -190,3 +190,15 @@ export async function confirmParameter(
     input: { draftId, proposalId, expectedVersion, confirmationAction: "confirm_parameter" },
   }));
 }
+
+/**
+ * Safe P1-only hint from a HUMAN-CONFIRMED Goal.
+ * NOT model inference, NOT automatic parameter confirmation, and NOT a global
+ * cross-domain classification rule. Rust still owns the concept whitelist.
+ */
+export function suggestApprovedAliasesFromGoal(confirmedGoalText:string): string[] {
+  if (/(?:\b(?:jlpt[\s-]*)?n2\b|日[語文]二級)/iu.test(confirmedGoalText)) {
+    return ["JLPT N2"];
+  }
+  return [];
+}
