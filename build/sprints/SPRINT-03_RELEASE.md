@@ -1,4 +1,4 @@
-# Sprint 3｜完整測試、修 Bug 與 Android Pilot（B19–B21）
+# Sprint 3｜US-01～03 完整回歸、P0 安全測試與 Android Pilot（B19–B21）
 
 **目的**：把 Sprint 1、2 真正接起來，驗證 P0 安全、隱私、真機本地推論、雙方完成與發布。**程式碼 PR 的 CI 不使用治理手續卡住 Coding，但發布測試不能因此跳過。**
 
@@ -7,6 +7,18 @@
 - **發布依賴**：Bible 只要求 **B21 依賴 B19；參考 B20**。B20 可稍後完成、不可升格成發布硬門檻。
 - **不誤導平台支援**：iOS 程式從 Day 1 保持可移植；本階段交付是 Android Pilot，不是已通過 iOS App／TestFlight。
 
+
+## 0. Release 的首要條件：三條故事一次接通
+
+**不是把 B19 當第一次整合。** US-01 應在 Sprint 1 真機驗；US-02/03 應在 Sprint 2 真 Cloud／雙帳號驗；Sprint 3 只對已跑過的完整故事執行回歸、故障注入、性能與發版。
+
+| Gate | 從使用者角度重走 | 必須證明 |
+|---|---|---|
+| **US-01** | 手機純文字／圖片 → 本地理解 → 意圖候選／UNKNOWN → 最多 3 題必要確認 → 私有 Goal／合法條件 | 真 Gemma／Rust／SQLite，無自動 Goal/Consent；B06 8-slot 違規擋下；重啟／離線／取消正確 |
+| **US-02** | A 本人同意分享 → Server 驗證 → 真 B 候選或真無候選，撤銷／封鎖後不可見 | A/B/C 帳號、雲端最少資料、RLS/硬條件與撤銷重試；沒有 Cloud AI |
+| **US-03** | A/B 雙方同意 → 安全聊天 → 15 分鐘 → 雙方完成 → 本人 Outcome 回手機 | Server 唯一可信 COMPLETED、所有負例不計；已核准的 OutcomeReceipt 同步可驗證 |
+
+**B19 P0 必須包含三條 Story 的真 E2E Evidence**，加上原 T01–T13／AI-LOCAL／E2E-01～05；任何 Story FAIL/NOT_RUN 則 **B21 NO-GO**。B20 仍是 P1，**不擅自改成 P0**。 `OutcomeReceipt` 所需權限與最少欄位若未核准，相關 US-03C 必須標 BLOCKED，不得偷偷同步或用 UI 假造完成。
 
 ## Coding 前必讀的唯一正式測試定義
 
@@ -80,7 +92,7 @@ Harness 靜態 Cloud AI 關鍵字檢查只是快速防呆；不能代替三項�
 **Debug 流程**：失敗 Evidence → `B-ID / AC-ID / T-ID` → 重現 → 根因 → 修復 → 回歸 → 更新 PR。若一個修法已重複失敗，不要無限重試，換策略並留下風險。修復不需要新 Sprint Activation。
 
 **最後成果判定**：
-- `B19=PASS`：所有 **P0 T01–T13、AI-LOCAL-01–03、E2E-01–05、相關安全／真機案例**各有真實 PASS。
+- `B19=PASS`：**US-01～US-03 真 End-to-End PASS**，且所有 **P0 T01–T13、AI-LOCAL-01–03、E2E-01–05、相關安全／真機案例**各有真實 PASS。
 - `B21=PASS`：在 B19 完成後，Android Pilot APK 有可驗證安裝／操作／效能／發行與回滾證據。
 - `B20` 可因 P1 為 NOT_RUN／IN_PROGRESS，不阻礙 B21，但應誠實揭露尚未量測的商業效果。
 - **使用者仍擁有最終發布批准權**。CI PASS 不等於用戶驗收 PASS，更不等於 iOS 已跑通。
