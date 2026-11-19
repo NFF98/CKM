@@ -260,6 +260,10 @@ JSON keys:
 "evidenceQuote": 原文逐字複製最多 80 字，不編造。
 "contentHint": 繁體中文說明內容，最多 160 字；不確定為 null。
 "uncertainty": 不確定之處，最多 120 字；沒有為 null。
+"clarifyingQuestion": null，或只能針對一個目前最重要的 UNKNOWN 問使用者的繁體中文短問題（最多 100 字）。
+  若原文清楚表達找人合作的 Goal 就不要問。若只有孤立單字或無個人需求的文章，
+  不要強迫問題；只有合理且需要區分意圖時才問。永遠不可假設使用者已回答。
+  若上下文含「【本人補充（非模型推測）】」，代表這是使用者自己的答案，可當證據。
 "intentCandidate": null，或私人候選物件：
   {"domain":"study|fashion|car|other|unknown","goalText":"使用者可能想和人共同完成的具體事情","evidenceQuote":"原文中逐字支持該意圖的片段"}。
 只有原文**明確表示本人想找人合作／一起做事**時，intentCandidate 才可非 null。
