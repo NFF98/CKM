@@ -1,5 +1,20 @@
 # CAKAMI Android 安裝衝突｜保留原 App 資料的修復方式
 
+## 2026-11-19：使用者同意清潔重裝，已交付「固定簽章」安裝版
+
+- 原 GitHub Runner 使用隨機 Debug 簽章，無法更新先前已裝的原 App。使用者明確同意**從零重裝**，接受清除舊版 App 私有收藏和下載模型。
+- 已使用離線建立的**專用 3072-bit RSA PKCS12 固定簽章**，重新簽署最後一版完整 Sprint 1 代碼 `eceb2f34c1a2e51bf99a518e90e85736b7a30c2f` 的 Android APK。
+- **App ID**：`com.nff98.ckm.dev`；**Version**：`0.1.0`／`versionCode 1000`。
+- **固定 APK 公鑰憑證 SHA-256**：`a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5`。
+- **已簽署 APK SHA-256**：`9ade2e0aea3cb2fb7b0ab51279f1f3af726f18364a3662ce6efb047b68753dc8`，169,347,xxx bytes（實際以 GitHub Repo 外的 ChatGPT artifact 為準）。
+- **驗證**：Android SDK 35 `apksigner verify` 通過 v2、v3；簽署前後所有 961 個非 META-INF ZIP entries CRC 完全一致，`AndroidManifest.xml` binary bytes 完全一致。
+- APK 本體在使用者目前 ChatGPT 對話的 attachment artifact 中；**不要提交簽署私鑰到 GitHub**。用戶可以直接在手機下載並安裝；不需 USB／ADB／Python。
+- 建議操作：先決定是否要保留原有收藏（解除安裝會**永久刪除 App 私有資料**），然後**解除安裝舊 CAKAMI 與 CAKAMI TEST**（如手機皆存在），再安裝固定簽章的 **CAKAMI**；E2B 只需在此新版重新下載一份（約 2.59 GB），不再有兩份。**若還未下載新 APK，請勿先卸載舊 App。**
+- 未來更新的 Android APK 必須繼續以**同一把私鑰**簽署、維持 App ID；可直接覆蓋並保留 E2B/SQLite。**沒有持續保存私鑰就不能保證未來更新**。
+- 對應私鑰及密碼**僅存在 ChatGPT 當前對話的私人備份附件／工作區，不在公開 GitHub Repo**。必須在私有 GitHub Actions Secrets 手動設定 `CKM_ANDROID_FIXED_KEYSTORE_BASE64` 與 `CKM_ANDROID_FIXED_KEYSTORE_PASSWORD` 後，GitHub APK Workflow 才能自動重複簽署相同憑證；**目前尚未設定，不能宣稱此工作流程可立即自動發版**。
+- 修改過的 GitHub Android workflow 會在 signing secrets 不存在或憑證 SHA-256 不匹配時 **Fail closed、不產出不相容 APK**。
+- 這份 APK 的程式本體已可安裝（簽章結構通過檢查），但手機實際安裝與 Sprint 1 E2E 功能仍須由使用者實機驗證。
+
 ## 已查明的打包缺陷（2026-11-19）
 
 - Android App ID：\`com.nff98.ckm.dev\`。
