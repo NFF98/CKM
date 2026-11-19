@@ -1266,6 +1266,95 @@ mod tests {
     }
 
     #[test]
+    fn us01a_text_goal_candidate_persists_without_creating_confirmed_goal() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let source = "我想找人一起練 JLPT N2 口說";
+        let asset = store.save(text_drop(source)).unwrap();
+        let reply = model_reply(r#"{"evidenceQuote":"我想找人","contentHint":"想與人練口說",
+            "uncertainty":null,
+            "intentCandidate":{"domain":"study",
+            "goalText":"我想找真人學伴一起練 JLPT N2 口說",
+            "evidenceQuote":"我想找人一起練"}}"#);
+        let saved = store.save_model_suggestion(&asset.id, source, reply).unwrap();
+        let candidate = saved.intent_candidate.unwrap();
+        assert_eq!(candidate.domain, "study");
+        assert_eq!(candidate.goal_text, "我想找真人學伴一起練 JLPT N2 口說");
+        assert_eq!(candidate.evidence_quote, "我想找人一起練");
+        let goal = crate::goal_draft::GoalStore::open(dir.path()).unwrap();
+        assert!(goal.load(&asset.id).unwrap().is_none(),
+            "AI must not create user confirmation event/Goal");
+        drop(store);
+        let store = LocalStore::open(dir.path()).unwrap();
+        assert_eq!(store.load_model_suggestion(&asset.id).unwrap()
+            .unwrap().intent_candidate.unwrap().domain, "study");
+        assert!(goal.load(&asset.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn us01a_plain_model_reply_keeps_explicit_user_goal_editable() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let source = "我想找人一起練 JLPT N2 口說";
+        let asset = store.save(text_drop(source)).unwrap();
+        let saved = store.save_model_suggestion(&asset.id, source,
+            model_reply("使用者想找人一起練習 JLPT N2 口說。")).unwrap();
+        let candidate = saved.intent_candidate.expect("source-extracted private fallback");
+        assert_eq!(candidate.domain, "unknown");
+        assert_eq!(candidate.goal_text, source);
+        assert_eq!(candidate.evidence_quote, source);
+    }
+
+    #[test]
+    fn us01a_single_word_and_advertisement_must_not_forge_match_intent() {
+        for source in ["パクる", "本日限定！居酒屋 全品半額", "BMW E46 改裝教學"] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = LocalStore::open(dir.path()).unwrap();
+            let asset = store.save(text_drop(source)).unwrap();
+            let reply = format!(r#"{{"evidenceQuote":"{}","contentHint":"內容辨識",
+                "intentCandidate":{{"domain":"study","goalText":"想找真人學伴",
+                "evidenceQuote":"{}"}}}}"#, source, source);
+            let saved = store.save_model_suggestion(&asset.id, source, model_reply(&reply)).unwrap();
+            assert!(saved.intent_candidate.is_none(), "ambiguous source: {source}");
+            assert!(crate::goal_draft::GoalStore::open(dir.path())
+                .unwrap().load(&asset.id).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn us01a_fashion_candidate_private_but_never_auto_publish() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let source = "我想找人一起研究服裝設計";
+        let asset = store.save(text_drop(source)).unwrap();
+        let reply = model_reply(r#"{"contentHint":"時尚合作",
+            "intentCandidate":{"domain":"fashion","goalText":"找人一起研究服裝設計",
+            "evidenceQuote":"找人一起研究服裝設計"}}"#);
+        let saved = store.save_model_suggestion(&asset.id, source, reply).unwrap();
+        assert_eq!(saved.intent_candidate.unwrap().domain, "fashion");
+        assert!(crate::goal_draft::GoalStore::open(dir.path())
+            .unwrap().load(&asset.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn us01a_bad_intent_evidence_and_fake_consent_are_not_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let source = "我想找人一起練 JLPT N2 口說";
+        let asset = store.save(text_drop(source)).unwrap();
+        let invalid_evidence = model_reply(r#"{"contentHint":"學習",
+           "intentCandidate":{"domain":"study","goalText":"練口說",
+           "evidenceQuote":"來源沒有這句"}} "#);
+        let result = store.save_model_suggestion(&asset.id, source, invalid_evidence).unwrap();
+        assert!(result.intent_candidate.is_none());
+        let fake_consent = model_reply(r#"{"evidenceQuote":"我想找人","contentHint":"學習",
+           "intentCandidate":{"domain":"study","goalText":"練口說",
+           "evidenceQuote":"我想找人","consent":true}}"#);
+        assert_eq!(store.save_model_suggestion(&asset.id, source, fake_consent).unwrap_err(),
+            "MODEL_OUTPUT_FORMAT");
+    }
+
+    #[test]
     fn b03_phone_regression_japanese_word_fenced_json_is_validated_and_private() {
         let dir = tempfile::tempdir().unwrap();
         let store = LocalStore::open(dir.path()).unwrap();
