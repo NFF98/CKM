@@ -2,6 +2,18 @@
 
 > GitHub 追蹤用，不是新 Governance Gate。**只有具備真實 Evidence 才可標 PASS**；上層依據 [Build Bible](../BACKLOG.md)／[Spec Traceability](../TRACEABILITY.md)／[Sprint 1 AC](SPRINT-01_LOCAL_AI.md)。
 
+## 2026-11-19｜本輪補齊手機可測的 US-01C／D（PR #17）
+
+**新增真實 Coding（非只改文件）：**
+- **US-01C / B05：** 已確認 Goal 包含 N2／JLPT N2／日語二級時，畫面提供「採用 Goal 裡的 N2 條件候選」；只會保存 `OBSERVED` 私人候選，**第二次本人確認**才加入 B06 slot。Fashion／Car／`パクる` 等沒有 N2 證據時不自動出現；有新 TS regression。
+- **US-01C / B06：** 抽出獨立 atomic slot 配置判斷，新增合成 **8 個已占→第 9 個拒絕、原本 8 個不被踢掉、空位重用** Rust 測試。**不是**虛構 8 個正式批准的 Registry 類別；完整 T-01 白名單仍 OPEN，真實 8 種合法概念的 E2E 保持 BLOCKED。
+- **US-01D / B08：** 新增 Rust SQLite `local_share_preview_approvals` / `local_share_preview_events`、使用者逐項選擇「Goal 全文／已確認 N2」及明確二次操作、版本化、快照綁定、撤回、來源刪除級聯。來源 Goal／條件／生命週期改變時舊紀錄失效。新增 TS strict contract、Rust 威脅／負例測試，以及 Android UI 操作；**全部本地，`canUpload=false`**。這是本地逐項審核而非 Sprint 2 的正式 Cloud Consent，未核准欄位、私密 OCR/圖片/補問答案不能拿去公開。
+- **本輪不新增** Cloud 連接、任意公開欄位、假真人或假的跨域視覺理解；先讓使用者測試真 Android APK。
+
+**工程測試**：此段程式曾有 TypeScript unknown 型別與 Rust moved value 編譯錯誤，均已修復。最終程式及 APK 的 CI 以 PR #17 最新 Head run／GitHub Actions 為準；不可將此段 Coding 自動寫為 Android 真機 PASS。
+
+**剩餘 Release Gate**：用最新 APK 真機驗證「文字／圖片 OCR→私人建議→補問→本人確認→已核准條件→8-slot→逐項本地審核→撤回／期限／離線」；T-01 八種正式概念仍需 Registry Decisions，未核准前不能以測試假白名單發布。
+
 ## 2026-11-19｜US-01B／C／D 後續實際 Coding（PR #17，全部仍待 Android 真機 E2E）
 
 **Stack：** [PR #15](https://github.com/NFF98/CKM/pull/15) → [PR #16](https://github.com/NFF98/CKM/pull/16) → **[PR #17](https://github.com/NFF98/CKM/pull/17)**（`feat/us01b-us01c-local-flow`，Draft；**不是 main 合併或 APK 已發布**）。本段為 2026-11-19 新開發紀錄；下方先前 NOT_STARTED 表格是當時歷史狀態。
