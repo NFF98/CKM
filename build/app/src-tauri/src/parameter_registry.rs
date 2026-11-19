@@ -514,10 +514,11 @@ impl ParameterStore {
             let mut stmt=tx.prepare(
                 "SELECT slot_index FROM local_matching_slots WHERE draft_id=?1"
             ).map_err(|_| err("DATABASE_READ_FAILED"))?;
-            stmt.query_map(params![draft_id],|row|row.get(0))
-                .map_err(|_| err("DATABASE_READ_FAILED"))?
-                .collect::<rusqlite::Result<Vec<i64>>>()
-                .map_err(|_| err("DATABASE_READ_FAILED"))?
+            let rows=stmt.query_map(params![draft_id],|row|row.get(0))
+                .map_err(|_| err("DATABASE_READ_FAILED"))?;
+            let collected=rows.collect::<rusqlite::Result<Vec<i64>>>()
+                .map_err(|_| err("DATABASE_READ_FAILED"))?;
+            collected
         };
         let slot=(0_i64..8_i64).find(|index| !occupied.contains(index))
             .ok_or_else(|| err("B06_SLOT_BUDGET_EXCEEDED"))?;
