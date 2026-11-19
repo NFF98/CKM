@@ -9,6 +9,26 @@
 
 **切勿先解除安裝或清除資料！** 舊版 Gemma（約 2.59 GB）與私有 SQLite 存在 App 私有目錄，解除安裝可能將其一併刪除。
 
+## 避免重新下載 2.59 GB：舊版 E2B 複製到獨立測試版（Windows + USB）
+
+**優先使用這個方法，不必解除安裝任何 App，也不必再從網路下載模型。** 因為獨立測試版 App ID 不同，Android 私人目錄彼此隔離，才會重複下載。兩個 Debug App 若都能通過 Android USB 的 \`run-as\`，就可經電腦串流搬移已驗證的 Gemma 權重，不需要額外在電腦存 2.59 GB。
+
+1. 在新 CAKAMI TEST 點 **暫停下載**，先保留舊 App、舊下載好的 E2B 和所有收藏。
+2. 將手機用 USB 接 Windows，啟用開發者選項 → USB 偵錯，授權電腦。Windows 應有 \`adb\`（Android Platform Tools）與 Python 3。
+3. 在 Cursor 專案根目錄執行：
+
+~~~powershell
+adb devices
+py -3 tools\reuse_gemma_same_phone.py
+~~~
+
+4. 腳本檢查 **兩個已安裝 App** 都是 debuggable、確認舊模型長度 **2,588,147,712 bytes** 與版本簽章標記，然後以 USB 串流複製；過程計算模型 SHA-256 \`18193810...\`，驗證正確才讓新 App 啟用。舊 App 模型與 SQLite 完全不動，沒有雲端傳輸或卸載。
+5. 顯示「完成」之後，重新開啟 **CAKAMI TEST** 檢查 Model Status，不再下載 E2B。
+
+**限制**：Android \`run-as\` 只適用於 debuggable 的 App；如果舊版不是 Debug build 或 USB 禁止 \`run-as\`，腳本會安全停止，絕不繞過系統隔離。手機仍需有**新 App 自己的約 2.59 GB 空間**，但不必再次耗網路流量。傳輸失敗時只移除新 App 的未完成臨時複本，保留舊 App。
+
+程式：[tools/reuse_gemma_same_phone.py](../tools/reuse_gemma_same_phone.py)。**這是基於程式碼路徑的修復工具；真機執行尚未驗證，不可宣稱已成功移轉。**
+
 ## 解法 A：原始簽章私鑰仍在你的 Windows（可保留資料、直接覆蓋）
 
 1. 手機開啟「開發人員選項／USB 偵錯」，用 USB 接上 Windows，並安裝 Android Platform Tools（\`adb\`）、Android SDK Build Tools（\`apksigner\`）、Java JDK（\`keytool\`）。
