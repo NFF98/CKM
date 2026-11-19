@@ -42,3 +42,16 @@
 - 尚無使用者手機實測 evidence，不能把真機驗收寫成 PASS。
 
 GitHub Actions 固定簽章 pipeline 的私密 GitHub Secrets 尚需配置；不得為了通過 CI 把 keystore／密碼提交公開 Repo。這次由離線保存的同一把簽章金鑰輸出成品。
+
+## 2026-11-20：0.1.1 固定簽章 APK 成品驗證
+
+- [Android 0.1.1 原包名編譯 PASS](https://github.com/NFF98/CKM/actions/runs/44619961098) （source commit `b6bb5cc01030e8fcc7b5768cece33c6b30f8c99d`）。
+- Android SDK `aapt dump badging` 實際驗證：`package: name='com.nff98.ckm.dev' versionCode='1001' versionName='0.1.1'`。
+- [Kotlin 原生編譯及 `testDebugUnitTest` PASS](https://github.com/NFF98/CKM/actions/runs/44619955359)（包括模型複用／標記修復／避免重抓的回歸測試）。
+- [TypeScript 與 Rust PASS](https://github.com/NFF98/CKM/actions/runs/44619955262)。
+- 離線用前一版 CLEAN APK **完全相同的私鑰**重新簽署新 APK，Android SDK 35 `apksigner verify` 顯示 v2=true、v3=true。
+- 簽章憑證 SHA-256：`a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5`，與 CLEAN 0.1.0 完全一致。
+- 最終使用者安裝版檔案：`CAKAMI-v0.1.1-FIXED-UPDATE-ARM64.apk`，169,332,724 bytes；**APK 檔 SHA-256**：`e4dd4db3bad79a5c9a2c137295c319325c2d9ad869f204413f758f3080a79c2d`。
+- 結構與 RAW 輸入的 961 個非 META-INF ZIP entries CRC 一致，`AndroidManifest.xml` 完全未改；確保重新簽名未修改程式內容。
+- 最終 APK 存放於本次 ChatGPT 對話附件（**不在 public repo**）；避免使用者下載 GitHub RAW debug artifact，RAW 簽章不相容，只能下載已確認固定簽章的成品。
+- **Android 真機覆蓋更新後的 E2B 不重抓驗收：NOT_RUN**，尚待使用者在手機直接更新觀察。這裡的 PASS 僅指建置、Kotlin/TypeScript/Rust unit test、簽章與 manifest 靜態驗證。
