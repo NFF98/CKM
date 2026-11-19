@@ -217,8 +217,14 @@ fn parse_private_model_reply(
             || !original.contains(evidence)
             || !matches!(domain, "study" | "fashion" | "car" | "other" | "unknown")
         {
-            // Keep the safe content explanation, but never show an ungrounded intent.
-            None
+            // Discard the AI-written goal when its evidence is wrong, but preserve
+            // the person's own explicit text as an editable private candidate.
+            // This cannot invent intent: it quotes only the user's actual source.
+            Some(PrivateIntentCandidate {
+                domain: "unknown".into(),
+                goal_text: original.trim().to_owned(),
+                evidence_quote: source_quote(original),
+            })
         } else {
             Some(PrivateIntentCandidate {
                 domain: candidate.domain,
@@ -1346,7 +1352,10 @@ mod tests {
            "intentCandidate":{"domain":"study","goalText":"練口說",
            "evidenceQuote":"來源沒有這句"}} "#);
         let result = store.save_model_suggestion(&asset.id, source, invalid_evidence).unwrap();
-        assert!(result.intent_candidate.is_none());
+        let fallback = result.intent_candidate.expect("source-only fallback");
+        assert_eq!(fallback.domain, "unknown");
+        assert_eq!(fallback.goal_text, source);
+        assert_eq!(fallback.evidence_quote, source);
         let fake_consent = model_reply(r#"{"evidenceQuote":"我想找人","contentHint":"學習",
            "intentCandidate":{"domain":"study","goalText":"練口說",
            "evidenceQuote":"我想找人","consent":true}}"#);
