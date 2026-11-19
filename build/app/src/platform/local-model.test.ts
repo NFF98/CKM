@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  importModel, loadModelSuggestion, modelStatus, parseModelStatus, proposeModel,
+  answerIntentQuestion, importModel, loadModelSuggestion, modelStatus, parseModelStatus, proposeModel,
   prepareModel, pauseModelDownload, parseModelSuggestion
 } from "./local-model";
 
@@ -23,6 +23,7 @@ const proposal = {
   contentHint: "日語詞彙",
   uncertainty: null,
   intentCandidate: null,
+  pendingQuestion: null,
   modelId: "gemma-4-E2B-it",
   runtime: "litert-lm-android-0.16.1",
   backend: "cpu",
@@ -135,6 +136,34 @@ describe("B03 本地 Gemma 4 E2B Model Contract", () => {
     ]) {
       expect(() => parseModelSuggestion(invalid)).toThrow("Contract");
     }
+  });
+
+  it("B09 本人回答最多兩題，只有明確輸入才傳給 Rust", async () => {
+    const invoke=vi.fn().mockResolvedValue(undefined);
+    await answerIntentQuestion(invoke,id,1,"我想找人練習 N2 口說");
+    expect(invoke).toHaveBeenCalledWith("answer_intent_question",{
+      assetId:id,ordinal:1,answer:"我想找人練習 N2 口說"
+    });
+    for(const bad of [0,3]) {
+      await expect(answerIntentQuestion(invoke,id,bad as 1|2,"a"))
+        .rejects.toThrow("B09_INVALID_ANSWER");
+    }
+    await expect(answerIntentQuestion(invoke,id,2,"  "))
+      .rejects.toThrow("B09_INVALID_ANSWER");
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("B09 問題只允許一個有效私人問句，不能偽造 Goal", () => {
+    expect(parseModelSuggestion({...proposal,pendingQuestion:{
+      ordinal:1,text:"你想用這段內容做什麼？"
+    }}).pendingQuestion?.ordinal).toBe(1);
+    for(const invalid of [
+      {...proposal,pendingQuestion:{ordinal:3,text:"問三"}},
+      {...proposal,pendingQuestion:{ordinal:1,text:""}},
+      {...proposal,pendingQuestion:{ordinal:1,text:"好的",confirmed:true}},
+      {...proposal,intentCandidate:{domain:"study",goalText:"練習",
+        evidenceQuote:"パクる"},pendingQuestion:{ordinal:1,text:"再問"}},
+    ]) expect(()=>parseModelSuggestion(invalid)).toThrow("Contract");
   });
 
   it("錯誤 UUID 不會進入 Rust 命令", async () => {
