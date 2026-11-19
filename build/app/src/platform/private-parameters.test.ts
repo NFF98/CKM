@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   confirmParameter, listParameters, listRegistry, parsePrivateParameter,
-  previewConcept, saveParameter, type PrivateParameter
+  previewConcept, saveParameter, suggestApprovedAliasesFromGoal, type PrivateParameter
 } from "./private-parameters";
 
 const draftId = "f126cb5c-dc54-4666-b460-3b2e7b41ca13";
@@ -20,6 +20,17 @@ const observed: PrivateParameter = {
 };
 
 describe("B05 Private Parameter Registry Contract", () => {
+  it("US-01C: only N2 evidence in a confirmed Goal offers an unconfirmed P1 alias",()=>{
+    for (const goal of ["我要找 JLPT N2 學伴","我想練 N2 口說","日語二級練習"]) {
+      expect(suggestApprovedAliasesFromGoal(goal)).toEqual(["JLPT N2"]);
+    }
+    for (const goal of ["パクる","汽車 N20 引擎改裝","時裝模仿課程",
+      "日文 N1"]) {
+      expect(suggestApprovedAliasesFromGoal(goal)).toEqual([]);
+    }
+  });
+
+
   it("Registry 僅列出經已知規格批准的概念", async () => {
     const registry = [{
       conceptId:"study.jlpt_level",aliases:["N2","JLPT N2","日語二級"],
