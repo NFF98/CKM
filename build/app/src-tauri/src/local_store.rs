@@ -1701,7 +1701,7 @@ mod tests {
             "INSERT INTO local_intent_questions
              (asset_id,base_source_sha256,ordinal,question,issued_at_ms)
              VALUES (?1,?2,3,'wrong',123)",
-            params![image.id,format!("{:x}",Sha256::digest(b"パクる"))],
+            params![image.id,format!("{:x}",Sha256::digest("パクる".as_bytes()))],
         ).is_err(),"direct SQL cannot insert a third question");
         assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
             .load(&image.id).unwrap().is_none());
