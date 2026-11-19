@@ -71,6 +71,15 @@ pub struct OcrRecord {
     pub updated_at_ms: Option<i64>,
 }
 
+/// US-01A: an unconfirmed, private suggestion. It is neither a Goal event nor Consent.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct PrivateIntentCandidate {
+    pub domain: String,
+    pub goal_text: String,
+    pub evidence_quote: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelSuggestion {
@@ -79,6 +88,7 @@ pub struct ModelSuggestion {
     pub evidence_quote: String,
     pub content_hint: Option<String>,
     pub uncertainty: Option<String>,
+    pub intent_candidate: Option<PrivateIntentCandidate>,
     pub model_id: String,
     pub runtime: String,
     pub backend: String,
@@ -93,6 +103,27 @@ struct RawSuggestion {
     evidence_quote: Option<String>,
     content_hint: Option<String>,
     uncertainty: Option<String>,
+    intent_candidate: Option<PrivateIntentCandidate>,
+}
+
+/// Rust deliberately requires first-person collaborative intent evidence before offering
+/// a matching Goal. Topic-only content (including "パクる") must remain UNKNOWN.
+/// This conservative gate can abstain; it never creates or confirms a Goal.
+fn explicit_collaboration_intent(source: &str) -> bool {
+    let s = source.to_lowercase();
+    let wants = ["我想", "我要", "我希望", "想找", "希望找", "想和", "想跟",
+        "i want", "i need", "i'd like", "looking for", "i am looking",
+        "探してい", "探したい", "一緒にしたい", "一緒に勉強したい"]
+        .iter().any(|needle| s.contains(needle));
+    let together = ["找人", "找個人", "學伴", "伙伴", "夥伴", "一起", "合作",
+        "搭子", "找真人", "和人", "跟人", "partner", "someone",
+        "with others", "with someone", "together", "一緒", "仲間"]
+        .iter().any(|needle| s.contains(needle));
+    wants && together
+}
+
+fn source_quote(source: &str) -> String {
+    source.chars().take(80).collect()
 }
 
 /// On-device small models may return JSON, fenced JSON or plain text.
@@ -101,7 +132,7 @@ struct RawSuggestion {
 fn parse_private_model_reply(
     original: &str,
     reply: &str,
-) -> Result<(String, Option<String>, Option<String>), String> {
+) -> Result<(String, Option<String>, Option<String>, Option<PrivateIntentCandidate>), String> {
     let text = reply.trim().trim_start_matches('\u{feff}').trim();
     if text.is_empty() || text.len() > 8192 {
         return Err(store_error("MODEL_OUTPUT_FORMAT"));
@@ -139,6 +170,7 @@ fn parse_private_model_reply(
                 evidence_quote: None,
                 content_hint: Some(body.to_owned()),
                 uncertainty: Some("模型回覆為一般文字，尚未結構化；請自行核對。".into()),
+                intent_candidate: None,
             }
         }
     };
@@ -167,7 +199,45 @@ fn parse_private_model_reply(
     if quote.trim().is_empty() || !original.contains(&quote) {
         return Err(store_error("MODEL_EVIDENCE_MISMATCH"));
     }
-    Ok((quote, raw.content_hint, raw.uncertainty))
+    // A model guess is never an authorization. Even a valid proposal is withheld when
+    // the source does not explicitly express a personal wish to collaborate.
+    let can_suggest = explicit_collaboration_intent(original)
+        && original.chars().count() <= 500
+        && original.len() <= 2048;
+    let intent_candidate = if !can_suggest {
+        None
+    } else if let Some(candidate) = raw.intent_candidate {
+        let evidence = candidate.evidence_quote.trim();
+        let domain = candidate.domain.as_str();
+        if candidate.goal_text.trim().is_empty()
+            || candidate.goal_text.chars().count() > 500
+            || candidate.goal_text.len() > 2048
+            || evidence.is_empty()
+            || evidence.chars().count() > 80
+            || !original.contains(evidence)
+            || !matches!(domain, "study" | "fashion" | "car" | "other" | "unknown")
+        {
+            // Keep the safe content explanation, but never show an ungrounded intent.
+            None
+        } else {
+            Some(PrivateIntentCandidate {
+                domain: candidate.domain,
+                goal_text: candidate.goal_text.trim().to_string(),
+                evidence_quote: evidence.to_string(),
+            })
+        }
+    } else {
+        // If Gemma returns ordinary prose or omits the optional field,
+        // preserve obvious user-stated collaborative intent as an EDITABLE
+        // quote instead of forcing them to retype it. This is source extraction,
+        // not an AI-inferred goal or a confirmed intent.
+        Some(PrivateIntentCandidate {
+            domain: "unknown".into(),
+            goal_text: original.trim().to_owned(),
+            evidence_quote: source_quote(original),
+        })
+    };
+    Ok((quote, raw.content_hint, raw.uncertainty, intent_candidate))
 }
 
 pub struct LocalStore {
@@ -263,6 +333,13 @@ impl LocalStore {
                updated_at_ms INTEGER NOT NULL,
                CHECK(raw_text IS NULL OR length(raw_text) <= 65536),
                CHECK(corrected_text IS NULL OR length(corrected_text) <= 65536)
+             );
+             CREATE TABLE IF NOT EXISTS local_intent_candidates (
+               asset_id TEXT PRIMARY KEY NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
+               source_sha256 TEXT NOT NULL CHECK(length(source_sha256)=64),
+               candidate_json TEXT NOT NULL CHECK(length(candidate_json) <= 4096),
+               state TEXT NOT NULL DEFAULT 'suggested_private'
+                 CHECK(state='suggested_private')
              );
              CREATE TABLE IF NOT EXISTS local_model_suggestions (
                asset_id TEXT PRIMARY KEY NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
@@ -664,7 +741,7 @@ impl LocalStore {
         {
             return Err(store_error("MODEL_INVALID_OUTPUT"));
         }
-        let (quote, content_hint, uncertainty) =
+        let (quote, content_hint, uncertainty, intent_candidate) =
             parse_private_model_reply(original_input, &native.raw_text)?;
         let sha = format!("{:x}", Sha256::digest(original_input.as_bytes()));
         let now = clock_ms()?;
@@ -707,6 +784,20 @@ impl LocalStore {
             params![uuid, sha, quote, content_hint, uncertainty, native.model_id,
                     native.runtime, native.backend, native.elapsed_ms as i64, now],
         ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        // Update content hint + optional private intent in one transaction.
+        // A model may never insert into local_goal_drafts/confirmation_events.
+        tx.execute("DELETE FROM local_intent_candidates WHERE asset_id=?1",
+            params![uuid]).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        if let Some(ref candidate) = intent_candidate {
+            let json = serde_json::to_string(candidate)
+                .map_err(|_| store_error("MODEL_OUTPUT_FORMAT"))?;
+            tx.execute(
+                "INSERT INTO local_intent_candidates
+                 (asset_id,source_sha256,candidate_json,state)
+                 VALUES (?1,?2,?3,'suggested_private')",
+                params![uuid, sha, json],
+            ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        }
         tx.commit().map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
         self.load_model_suggestion(&uuid)?
             .ok_or_else(|| store_error("DATABASE_READ_FAILED"))
@@ -719,18 +810,27 @@ impl LocalStore {
         let sha = format!("{:x}", Sha256::digest(input.as_bytes()));
         let conn = self.connect()?;
         conn.query_row(
-            "SELECT asset_id,status,evidence_quote,content_hint,uncertainty,
-                    model_id,runtime,backend,elapsed_ms,updated_at_ms
-             FROM local_model_suggestions WHERE asset_id=?1 AND source_sha256=?2",
+            "SELECT s.asset_id,s.status,s.evidence_quote,s.content_hint,s.uncertainty,
+                    s.model_id,s.runtime,s.backend,s.elapsed_ms,s.updated_at_ms,
+                    i.candidate_json
+             FROM local_model_suggestions s
+             LEFT JOIN local_intent_candidates i ON i.asset_id=s.asset_id
+               AND i.source_sha256=s.source_sha256
+             WHERE s.asset_id=?1 AND s.source_sha256=?2",
             params![uuid, sha],
-            |row| Ok(ModelSuggestion {
-                asset_id: row.get(0)?, status: row.get(1)?,
-                evidence_quote: row.get(2)?, content_hint: row.get(3)?,
-                uncertainty: row.get(4)?, model_id: row.get(5)?,
-                runtime: row.get(6)?, backend: row.get(7)?,
-                elapsed_ms: row.get::<_, i64>(8)?.max(0) as u64,
-                updated_at_ms: row.get(9)?,
-            }),
+            |row| {
+                let json: Option<String> = row.get(10)?;
+                let candidate = json.map(|v| serde_json::from_str::<PrivateIntentCandidate>(&v))
+                    .transpose().map_err(|_| rusqlite::Error::InvalidQuery)?;
+                Ok(ModelSuggestion {
+                    asset_id: row.get(0)?, status: row.get(1)?,
+                    evidence_quote: row.get(2)?, content_hint: row.get(3)?,
+                    uncertainty: row.get(4)?, intent_candidate: candidate,
+                    model_id: row.get(5)?, runtime: row.get(6)?, backend: row.get(7)?,
+                    elapsed_ms: row.get::<_, i64>(8)?.max(0) as u64,
+                    updated_at_ms: row.get(9)?,
+                })
+            },
         ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))
     }
 
