@@ -42,7 +42,8 @@ import {
 } from "./platform/local-share-review";
 import "./styles.css";
 
-type View = "drop" | "diagnostic";
+type View = "drop" | "library" | "asset" | "diagnostic";
+type AssetStep = "source" | "understand" | "goal" | "conditions";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 if (!root) throw new Error("找不到 App Root");
@@ -54,29 +55,38 @@ root.innerHTML = `
       <p class="top-caption">私人內容・本地理解・真人學伴</p>
     </header>
     <nav class="tabs" aria-label="主要導覽">
-      <button class="tab active" id="tab-drop" type="button" aria-current="page">開始</button>
-      <button class="tab" id="tab-diagnostic" type="button">裝置狀態</button>
+      <button class="tab active" id="tab-drop" type="button" aria-current="page">新增</button>
+      <button class="tab" id="tab-library" type="button">收藏</button>
+      <button class="tab" id="tab-asset" type="button" disabled>處理內容</button>
+      <button class="tab" id="tab-diagnostic" type="button">裝置</button>
     </nav>
+    <div class="state-legend" aria-label="操作狀態顏色說明">
+      <span class="state-key state-user">● 你操作</span>
+      <span class="state-key state-running">● 系統執行</span>
+      <span class="state-key state-input">● 需要輸入</span>
+    </div>
+    <p id="task-feedback" class="task-feedback state-input" role="status" aria-live="polite">需要輸入：新增圖片或文字</p>
 
     <main id="main-content">
       <section id="view-drop" class="view">
-        <p class="eyebrow">SPRINT 1 · US-01 開發驗收中</p>
-        <h1>從文字或圖片，開始理解你想做的事。</h1>
-        <p class="lead">輸入文字或選擇圖片。Gemma 可以提出私人意圖建議，但只有你親自確認才會形成 Goal；目前不會自動找人或上傳原圖。</p>
+        <p class="eyebrow">01 / 新增</p>
+        <h1>從一張照片或一句話開始</h1>
+        <p class="lead">先保存內容，下一頁再讓 AI 理解。所有資料先留在手機。</p>
+        <div id="model-onboarding"></div>
 
         <section class="note" aria-labelledby="drop-heading">
-          <h2 id="drop-heading">放入圖片或文字</h2>
+          <h2 id="drop-heading">選擇輸入方式</h2>
           <div class="actions">
-            <button type="button" class="primary" id="choose-image">選擇圖片</button>
-            <button type="button" class="secondary" id="take-photo">拍照</button>
+            <button type="button" class="primary" id="choose-image">選擇照片</button>
+            <button type="button" class="secondary" id="take-photo">直接拍照</button>
           </div>
           <input type="file" id="image-picker" accept="image/png,image/jpeg,image/webp" hidden aria-label="選擇私人圖片" />
           <input type="file" id="camera-picker" accept="image/png,image/jpeg,image/webp" capture="environment" hidden aria-label="手機拍照" />
-          <label for="drop-text" class="field-label">或輸入任何文字（不用圖片）</label>
+          <label for="drop-text" class="field-label">或輸入文字</label>
           <textarea id="drop-text" rows="4" placeholder="例如：我想找人一起練 JLPT N2 口說" spellcheck="false"></textarea>
-          <button type="button" class="primary" id="save-text">保存並理解這段文字</button>
-          <p class="fineprint">目前圖片僅支援 PNG／JPEG／WebP，單張上限暫定 8 MB；文字最多 64 KB。這是開發期安全上限，仍待正式規格確認。</p>
-          <p id="save-status" role="status" aria-live="polite" class="status">尚未選擇內容</p>
+          <button type="button" class="primary" id="save-text">儲存文字，前往下一步</button>
+          <p class="fineprint">圖片：PNG／JPEG／WebP，最多 8 MB。文字最多 64 KB。</p>
+          <p id="save-status" role="status" aria-live="polite" class="status">等待你選擇內容</p>
         </section>
 
         <section aria-labelledby="recent-heading" class="recent-section">
@@ -90,9 +100,9 @@ root.innerHTML = `
         </section>
 
         <section class="note" aria-labelledby="model-heading">
-          <h2 id="model-heading">裝置端 Gemma 4 E2B</h2>
+          <h2 id="model-heading">首次準備本機 AI</h2>
           <p id="model-status" class="status" role="status" aria-live="polite">正在檢查本地模型…</p>
-          <p class="fineprint">第一次開啟會自動在 Wi-Fi／非計量網路下載約 2.59 GB 的官方模型，完成後自動驗證並安裝；完全不用自己找檔案。只下載公開模型，私人圖片、OCR 和學習內容不會送往雲端。下載完成後可以離線推論。</p>
+          <p class="fineprint">首次使用時，Wi-Fi 下載約 2.59 GB；完成後保留在手機。正常更新不需重抓。</p>
           <progress id="model-progress" max="100" value="0" aria-label="Gemma 模型下載進度" hidden></progress>
           <p id="model-download-percent" class="fineprint" aria-live="polite"></p>
           <div class="model-download-actions">
@@ -134,24 +144,50 @@ root.innerHTML = `
           </div>
         </dialog>
 
-        <div class="note boundary">
-          <strong>US-01｜內容不等於本人意圖</strong>
-          <p>本地 Gemma 可以提出私人 Goal 候選，你可以採用、修改或只收藏；只有你按下確認，Rust 才保存私人草稿。目前不會公開、配對或上傳。</p>
+      </section>
+      <section id="view-library" class="view" hidden aria-label="我的私人收藏">
+        <p class="eyebrow">02 / 收藏</p>
+        <h1>我的內容</h1>
+        <p class="lead">點選一筆，繼續理解或確認目標。</p>
+      </section>
+      <section id="view-asset" class="view" hidden aria-label="處理這筆內容">
+        <p class="eyebrow">03 / 逐步處理</p>
+        <div class="asset-toolbar">
+          <button type="button" class="text-action" id="asset-back">← 返回收藏</button>
+          <span class="state-key state-user">你的私人內容</span>
         </div>
-        <button type="button" class="secondary" id="go-diagnostic">檢查裝置端 Rust 連線</button>
+        <h1 id="asset-step-title">處理這筆內容</h1>
+        <nav class="asset-steps" aria-label="內容處理步驟">
+          <button type="button" class="step-button active" data-asset-step="source" aria-current="step">1 內容</button>
+          <button type="button" class="step-button" data-asset-step="understand">2 AI 理解</button>
+          <button type="button" class="step-button" data-asset-step="goal">3 我的目標</button>
+          <button type="button" class="step-button" data-asset-step="conditions">4 私人條件</button>
+        </nav>
+        <p id="asset-step-guide" class="step-guide">核對原文或照片後，前往 AI 理解。</p>
+        <p id="asset-step-empty" class="step-empty" hidden></p>
+        <div class="asset-next-actions">
+          <button type="button" id="asset-prev-step" class="secondary">上一步</button>
+          <button type="button" id="asset-next-step" class="primary">下一步</button>
+        </div>
       </section>
 
       <section id="view-diagnostic" class="view" hidden>
-        <p class="eyebrow">B01 · 連線診斷</p>
-        <h1>裝置狀態</h1>
-        <p class="lead">這項檢查呼叫手機 App 內的 Rust Command，不使用假的 API 回應。</p>
+        <p class="eyebrow">04 / 裝置</p>
+        <h1>本機 AI 與裝置</h1>
+        <p class="lead" id="device-model-summary">正在檢查 E2B 狀態…</p>
+        <details class="advanced-details" id="device-model-details">
+          <summary>查看本機 AI 詳細狀態</summary>
+        </details>
+        <details class="advanced-details">
+          <summary>連線診斷（進階）</summary>
         <div class="diagnostic-panel">
           <p class="diagnostic-title">Rust Bridge</p>
           <p id="bridge-status" role="status" aria-live="polite">尚未執行檢查</p>
           <p id="bridge-detail" class="detail">尚未檢查手機內的模型狀態。</p>
         </div>
-        <button type="button" class="primary" id="check-bridge">執行連線檢查</button>
-        <button type="button" class="secondary" id="back-home">返回開始</button>
+        <button type="button" class="primary" id="check-bridge">執行本機檢查</button>
+        </details>
+        <button type="button" class="secondary" id="back-home">返回新增</button>
       </section>
     </main>
     <footer class="footer">CAKAMI · Local-first · 僅限 18 歲以上學習者</footer>
@@ -165,8 +201,12 @@ const get = <T extends HTMLElement>(selector: string): T => {
 };
 
 const dropView = get<HTMLElement>("#view-drop");
+const libraryView = get<HTMLElement>("#view-library");
+const assetView = get<HTMLElement>("#view-asset");
 const diagnosticView = get<HTMLElement>("#view-diagnostic");
 const tabDrop = get<HTMLButtonElement>("#tab-drop");
+const tabLibrary = get<HTMLButtonElement>("#tab-library");
+const tabAsset = get<HTMLButtonElement>("#tab-asset");
 const tabDiagnostic = get<HTMLButtonElement>("#tab-diagnostic");
 const status = get<HTMLElement>("#bridge-status");
 const detail = get<HTMLElement>("#bridge-detail");
@@ -175,6 +215,16 @@ const saveStatus = get<HTMLElement>("#save-status");
 const recentStatus = get<HTMLElement>("#recent-status");
 const recentList = get<HTMLUListElement>("#recent-drops");
 const preview = get<HTMLElement>("#drop-preview");
+// Existing data/editing components are retained, but mounted in distinct pages.
+// Move confirmation dialogs outside hidden page ancestors so they work on any step.
+libraryView.append(get<HTMLElement>(".recent-section"));
+assetView.append(preview);
+const modelSection = get<HTMLElement>("#model-status").closest<HTMLElement>("section");
+if (!modelSection) throw new Error("找不到 Gemma 模型區");
+get<HTMLElement>("#model-onboarding").append(modelSection);
+for (const dialogId of ["#parameter-dialog", "#goal-dialog", "#delete-dialog"]) {
+  root.append(get<HTMLDialogElement>(dialogId));
+}
 const textInput = get<HTMLTextAreaElement>("#drop-text");
 const textButton = get<HTMLButtonElement>("#save-text");
 const pickButton = get<HTMLButtonElement>("#choose-image");
@@ -300,19 +350,83 @@ function errorMessage(error: unknown): string {
   return errors[raw] ?? `操作未完成：${raw}`;
 }
 
+const pageTabs: Record<View, HTMLButtonElement> = {
+  drop: tabDrop, library: tabLibrary, asset: tabAsset, diagnostic: tabDiagnostic,
+};
+const pageSections: Record<View, HTMLElement> = {
+  drop: dropView, library: libraryView, asset: assetView, diagnostic: diagnosticView,
+};
+const assetSteps: AssetStep[] = ["source", "understand", "goal", "conditions"];
+let activeAssetStep: AssetStep = "source";
+
+function showTaskFeedback(role: "user" | "running" | "input", message: string): void {
+  const feedback = get<HTMLElement>("#task-feedback");
+  feedback.className = "task-feedback state-" + role;
+  feedback.textContent = message;
+}
+
 function setView(view: View): void {
-  const diagnostic = view === "diagnostic";
-  dropView.hidden = diagnostic;
-  diagnosticView.hidden = !diagnostic;
-  tabDrop.classList.toggle("active", !diagnostic);
-  tabDiagnostic.classList.toggle("active", diagnostic);
-  if (diagnostic) {
-    tabDrop.removeAttribute("aria-current");
-    tabDiagnostic.setAttribute("aria-current", "page");
-  } else {
-    tabDiagnostic.removeAttribute("aria-current");
-    tabDrop.setAttribute("aria-current", "page");
+  if (view === "asset" && !selectedAssetId) view = "library";
+  for (const [id, section] of Object.entries(pageSections) as [View, HTMLElement][]) {
+    section.hidden = id !== view;
+    pageTabs[id].classList.toggle("active", id === view);
+    if (id === view) pageTabs[id].setAttribute("aria-current", "page");
+    else pageTabs[id].removeAttribute("aria-current");
   }
+  if (view === "drop") showTaskFeedback("input", "需要輸入：新增圖片或文字");
+  else if (view === "library") showTaskFeedback("user", "你操作：選一筆收藏，或返回新增");
+  else if (view === "asset") applyAssetStep();
+  else showTaskFeedback("running", "系統狀態：本機運行，不上傳私人內容");
+  window.scrollTo(0, 0);
+}
+
+function applyAssetStep(step: AssetStep = activeAssetStep): void {
+  activeAssetStep = step;
+  const titles: Record<AssetStep, string> = {
+    source: "核對內容", understand: "AI 理解", goal: "我的目標", conditions: "私人條件",
+  };
+  const guides: Record<AssetStep, string> = {
+    source: "原文與圖片僅留手機。可先辨識照片裡的文字。",
+    understand: "讓本機 AI 提出建議；建議不等於你的真正目標。",
+    goal: "選一個 AI 建議或自己輸入，確認後才成為私人目標。",
+    conditions: "只有你確認的條件才會記入私人意圖；不會公開配對。",
+  };
+  const panelMap: Record<AssetStep, string> = {
+    source: ".asset-source-section, .ocr-panel",
+    understand: ".model-panel",
+    goal: ".goal-panel",
+    conditions: ".parameter-panel",
+  };
+  for (const panel of Array.from(preview.children)) {
+    if (!(panel instanceof HTMLElement)) continue;
+    const panelStep = panel.classList.contains("asset-source-section") || panel.classList.contains("ocr-panel") ? "source"
+      : panel.classList.contains("model-panel") ? "understand"
+      : panel.classList.contains("goal-panel") ? "goal"
+      : panel.classList.contains("parameter-panel") ? "conditions" : "source";
+    panel.hidden = panelStep !== step;
+  }
+  const exists = Boolean(preview.querySelector(panelMap[step].split(", ")[0])) ||
+    (step === "source" && Boolean(preview.querySelector(".ocr-panel")));
+  const empty = get<HTMLElement>("#asset-step-empty");
+  empty.hidden = exists;
+  empty.textContent = step === "conditions"
+    ? "請先到「3 我的目標」確認目標，才可管理私人條件。"
+    : "正在準備本機內容，請從前一步繼續。";
+  get<HTMLElement>("#asset-step-title").textContent = titles[step];
+  get<HTMLElement>("#asset-step-guide").textContent = guides[step];
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-asset-step]")) {
+    const active = button.dataset.assetStep === step;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "step");
+    else button.removeAttribute("aria-current");
+  }
+  const index = assetSteps.indexOf(step);
+  get<HTMLButtonElement>("#asset-prev-step").hidden = index === 0;
+  const next = get<HTMLButtonElement>("#asset-next-step");
+  next.hidden = index === assetSteps.length - 1;
+  next.textContent = ["下一步：AI 理解", "下一步：我的目標", "下一步：私人條件"][index] || "下一步";
+  showTaskFeedback(step === "source" || step === "goal" || step === "conditions" ? "input" : "running",
+    step === "understand" ? "系統執行：本機 AI 可產生建議" : "需要輸入：" + titles[step]);
 }
 
 function updateBusy(isBusy: boolean): void {
@@ -1383,9 +1497,22 @@ async function runBridgeCheck(): Promise<void> {
 }
 
 tabDrop.addEventListener("click", () => setView("drop"));
+tabLibrary.addEventListener("click", () => setView("library"));
+tabAsset.addEventListener("click", () => setView("asset"));
 tabDiagnostic.addEventListener("click", () => setView("diagnostic"));
-get("#go-diagnostic").addEventListener("click", () => setView("diagnostic"));
+get("#asset-back").addEventListener("click", () => setView("library"));
 get("#back-home").addEventListener("click", () => setView("drop"));
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-asset-step]")) {
+  button.addEventListener("click", () => applyAssetStep(button.dataset.assetStep as AssetStep));
+}
+get<HTMLButtonElement>("#asset-prev-step").addEventListener("click", () => {
+  const index = assetSteps.indexOf(activeAssetStep);
+  if (index > 0) applyAssetStep(assetSteps[index - 1]);
+});
+get<HTMLButtonElement>("#asset-next-step").addEventListener("click", () => {
+  const index = assetSteps.indexOf(activeAssetStep);
+  if (index < assetSteps.length - 1) applyAssetStep(assetSteps[index + 1]);
+});
 checkButton.addEventListener("click", () => { void runBridgeCheck(); });
 textButton.addEventListener("click", () => { void savePrivateText(); });
 pickButton.addEventListener("click", () => imagePicker.click());
