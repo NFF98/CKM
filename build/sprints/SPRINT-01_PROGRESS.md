@@ -239,3 +239,12 @@
 - **使用者固定簽章更新 APK**：`CAKAMI-v0.1.2-UI-UPDATE-ARM64.apk`，SHA256 `e4eac8205070fa5ef7e9e3720904e1c9ff5ba40e8f6cfd4d73f205f0a7f4074d`，Android app ID `com.nff98.ckm.dev`、versionCode `1002`、versionName `0.1.2`，以與 CLEAN 0.1.1 完全相同 cert `a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5` 離線固定簽章。編譯及驗證 [PASS](https://github.com/NFF98/CKM/actions/runs/44666652984)，真機 E2B 保留／GUI 仍 **NOT_RUN**。
 - **未更動範圍**：11/19 使用者反映的 B03→B04 Action Intelligence 價值整合／能否提出有用下一步 **仍為 NG，這次僅調整 GUI，不能冒稱修好該缺口**。
 - [一輪真機測試步驟](../../test/US01_GUI_012_PHONE_TEST.md)。
+
+## E2B 真機效果差：模型品質與 Action Intelligence NG（2026-11-21）
+
+- **使用者 2026-11-21 真機評價：「E2B 效果超級爛」**。這是使用者可用性 / AI 答案品質 **FAIL**，不得以 APK Build PASS、模型下載完成或 JSON 可解析冒稱 B03 / B04 產品效果 PASS。使用者尚未提供新的失敗樣本，因此答錯、太慢、日文詞義錯或缺乏可執行下一步，不能在本輪擅自判定單一原因。
+- **已查出確定的產品設計抑制因子**：`CakamiModelPlugin.kt` 的超長多欄 JSON prompt 強制有原文第一人稱找真人合作才能建 Goal；`local_store.rs::explicit_collaboration_intent` 在 Rust 端又採用 `wants && together` 門檻。單字／照片內容在當前 UX 至多能有詞義＋UNKNOWN/補問，**沒有可以立即採用的實際下一步**。此為已確認的 B03→B04 Action Intelligence 缺口，不代表單靠放寬 Goal 門檻就能安全自動生成使用者意圖。
+- **修正方向（不換模型、不重下載 2.59 GB）**：把 Gemma E2B 職責縮至簡短、可核對的內容理解與不確定性，不再要求它同時做好多候選 JSON + 追問 + Goal 判定；由裝置內確定性知識卡／原生動作層提供 2–3 個和內容相關的**可選擇**「下一步」（只收藏、看日文詞義／例句、建立本地練習、輸入自己的 Goal 等，依來源型別決定）；按下後真的在 SQLite 完成並可重開驗證，或明確提示尚不支援，絕不呈現無作用的假按鈕。
+- **安全界線**：內容理解 ≠ 本人真實目的。E2B 不得自動建立 CONFIRMED Goal、修改正式 Registry、取得 Cloud Consent 或傳送原圖／私人筆記。所有私人資料留在裝置。先使用已下載 E2B，**不要藉品質問題默默改用雲端模型或強迫下載另一個大模型**。
+- **驗收提案（尚待產品回報確認）**：建立 10 個跨「單字、圖片+OCR、直述想合作、多義/未知、非日文情境」的可重播測項；每一筆能顯示簡明的「我理解了什麼／不確定什麼／你可以做什麼」，每個可點按動作都需要持久化或明確導航；不得捏造意圖，手機離線可用。以真機使用者對輸出「有沒有幫助」的評分決定是否需替換模型。
+- **目前狀態**：根因架構審核已完成；尚未修改程式／重出 APK，待下一個實作切片。這次不能宣稱品質已修復。
