@@ -545,7 +545,7 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
   panel.className = "model-panel";
   panel.setAttribute("aria-label", "私人 Gemma 內容理解與意圖候選");
   const heading = document.createElement("h3");
-  heading.textContent = "E2B 本機理解（選用）";
+  heading.textContent = "AI 理解與可能意圖";
   const state = document.createElement("p");
   state.className = "status";
   state.setAttribute("role", "status");
@@ -554,24 +554,26 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
   output.className = "model-output";
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "secondary";
-  button.textContent = "用手機 Gemma 理解這筆內容";
+  button.className = "primary";
+  button.textContent = "請 E2B 推薦 2～3 個可能方向";
   const note = document.createElement("p");
   note.className = "fineprint";
   note.textContent = "下方推薦是手機內的行動選項，不等於 AI 確認你的意圖；目標仍需本人確認。";
   const choicesTitle = document.createElement("h3");
-  choicesTitle.textContent = "現在可以做什麼？";
+  choicesTitle.textContent = "其他固定選項（不是 AI 推測）";
   const choicesPanel = document.createElement("div");
   choicesPanel.className = "next-actions";
   const actionResult = document.createElement("p");
   actionResult.className = "status";
   actionResult.hidden = true;
-  const aiDetails = document.createElement("details");
-  aiDetails.className = "advanced-details";
-  const aiSummary = document.createElement("summary");
-  aiSummary.textContent = "再請 E2B 分析（選用）";
-  aiDetails.append(aiSummary, button, state, output);
-  panel.append(choicesTitle, choicesPanel, actionResult, aiDetails, note);
+  // E2B output is a primary activity, not an advanced hidden setting.
+  const aiResults = document.createElement("section");
+  aiResults.className = "e2b-main-results";
+  const aiLabel = document.createElement("p");
+  aiLabel.className = "step-guide";
+  aiLabel.textContent = "AI 只提出可能性；選擇後還要你確認，不會自動分享。";
+  aiResults.append(aiLabel, button, state, output);
+  panel.append(heading, aiResults, choicesTitle, choicesPanel, actionResult, note);
   preview.append(panel);
   applyAssetStep();
 
@@ -664,13 +666,16 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
     hint.textContent = "理解：" + (result.contentHint || "未知");
     const uncertain = document.createElement("p");
     uncertain.textContent = "不確定：" + (result.uncertainty || "尚未確認");
-    evidenceDetails.append(evidenceSummary, quote, hint, uncertain);
-    output.append(evidenceDetails);
+    evidenceDetails.append(evidenceSummary, quote, uncertain);
+    const understood = document.createElement("p");
+    understood.className = "ai-understood";
+    understood.textContent = "我理解的內容：" + (result.contentHint || "還不確定");
+    output.append(understood, evidenceDetails);
     const candidates = result.intentCandidates.length > 0
       ? result.intentCandidates : result.intentCandidate ? [result.intentCandidate] : [];
     if (candidates.length) {
       const heading = document.createElement("p");
-      heading.textContent = "AI 提出的可能目標（選一個，或自己寫）";
+      heading.textContent = "AI 推測的方向（不是你的已確認意圖）";
       output.append(heading);
       for (const [index, candidate] of candidates.entries()) {
         const intent = document.createElement("p");
@@ -685,7 +690,7 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
         const adopt = document.createElement("button");
         adopt.type = "button";
         adopt.className = "secondary";
-        adopt.textContent = "用這個目標";
+        adopt.textContent = "選這個，先修改";
         adopt.addEventListener("click", () => {
           if (selectedAssetId !== assetId) return;
           const field = preview.querySelector<HTMLTextAreaElement>(
@@ -704,7 +709,7 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
       }
     } else {
       const unknown = document.createElement("p");
-      unknown.textContent = "E2B 無法從原文證明你想找人合作；上方仍有可執行的下一步供你選擇。";
+      unknown.textContent = "E2B 這次沒有產生可靠候選。可補充內容再試，或使用下方固定選項。";
       output.append(unknown);
     }
     // A model-suggested question never becomes a confirmed intent or approved Concept.
@@ -744,14 +749,14 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
       });
       output.append(label, respond);
     }
-    state.textContent = "AI 建議已準備好；請自己選擇或修改目標。";
+    state.textContent = "AI 分析完成；以上只是可能的方向。";
     showTaskFeedback("input", "需要輸入：採用建議或自行寫下真正目標");
   }
   try {
     const saved = await loadModelSuggestion(rust, assetId);
     if (selectedAssetId === assetId) {
       if (saved) showSuggestion(saved);
-      else state.textContent = "尚無經來源核對的模型建議。";
+      else state.textContent = "尚未執行 E2B；按上方按鈕產生可能方向。";
     }
   } catch (error) {
     if (selectedAssetId === assetId) state.textContent = errorMessage(error);
