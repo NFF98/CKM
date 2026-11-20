@@ -1545,6 +1545,8 @@ async function savePrivateText(): Promise<void> {
       : "私人文字已保存到手機。";
     await refreshDrops();
     await openAsset(saved.id, false);
+    // The user sees actionable suggestions immediately without waiting for E2B.
+    if (selectedAssetId === saved.id) applyAssetStep("understand");
   } catch (error) {
     saveStatus.textContent = errorMessage(error);
     showTaskFeedback("input", "需要輸入：請確認內容，然後重新儲存");
