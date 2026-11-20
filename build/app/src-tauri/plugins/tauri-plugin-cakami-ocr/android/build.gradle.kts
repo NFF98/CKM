@@ -31,4 +31,5 @@ dependencies {
     implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
     // Read JPEG/PNG/WebP orientation offline; no external OCR service.
     implementation("androidx.exifinterface:exifinterface:1.4.2")
+    testImplementation("junit:junit:4.13.2")
 }
