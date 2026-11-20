@@ -1,4 +1,4 @@
-name: CAKAMI Android 0.1.1 build input (NOT a user installer)
+name: CAKAMI Android 0.1.2 build input (NOT a user installer)
 # Builds CI debug output ONLY for offline re-signing with the existing fixed
 # certificate. This artifact must never be sent to users for installation.
 on:
@@ -53,9 +53,9 @@ jobs:
           APK="$(find build/app/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
           test -n "$APK"
           BADGING="$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")"
-          echo "$BADGING" | grep -E "^package: name='com.nff98.ckm.dev' versionCode='[0-9]+' versionName='0.1.1'"
+          echo "$BADGING" | grep -E "^package: name='com.nff98.ckm.dev' versionCode='[0-9]+' versionName='0.1.2'"
           VERSION_CODE="$(echo "$BADGING" | sed -n "s/^package: name='com.nff98.ckm.dev' versionCode='\\([0-9]*\\)'.*/\\1/p")"
-          test "$VERSION_CODE" -gt 1000
+          test "$VERSION_CODE" -gt 1001
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" > /dev/null
       - name: Upload raw APK for offline signing, NEVER to install directly
         uses: actions/upload-artifact@v4
