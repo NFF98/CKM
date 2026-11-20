@@ -227,3 +227,15 @@
 - **狀態**：B03、B04 原始 Coding 實作存在；B03→B04 **產品價值整合／Action Intelligence E2E = FAIL／NG（待修復）**，不得宣稱已完成或進入 B06 取代此缺口。B05 Concept Registry Coding／CI 既有 PASS 不變，但正式真機驗收仍未全部完成。
 - **修復方向（先設計／測試，再進 Coding）**：區分「客觀原文／詞義／內容類別」→「模型建議的下一步私人候選」→「本人選擇動作」→「實際執行並保存」。對 `パクる` 可以提出**複習、練用法、找學伴、只收藏**等動作選擇，**不能把 AI 猜測當作本人 Goal、Consent、CONFIRMED 或公開分享**。單一詞義不能可靠推定使用者真意，應給少量有用選擇而非造假自動 Goal。
 - **要求的下一次真機測試**：Drop `パクる`，不用再打字即可看到至少一個明確、相關且可執行的下一步；使用者點選後 App **真的完成**（如建立本地複習項或引導經本人確認的私人 Goal），重新開啟仍保留必要結果；只收藏／取消不建立 Goal。離線可用、無雲端 AI、無自動公開。**當前 NG，下一版尚未修復。**
+
+## 使用者四項手機 GUI 問題：分頁／色碼／E2B 首次顯示／重複按鈕（2026-11-20）
+
+- **使用者實測 UX FAIL**：單頁過長、功能重複、圖片／Goal／Intent 辨識不清；需分別顯示本人操作、系統執行、需要輸入，且 E2B 準備完後從首頁撤下。
+- **本輪修正**：[PR #17](https://github.com/NFF98/CKM/pull/17) 以原有 Rust/SQLite Command 保留資料與狀態機，純 UI 改為四個明確頁面 **新增／收藏／處理內容／裝置**；內容細分為 **1 原文及 OCR／2 本地 AI 理解／3 本人 Goal／4 私人條件**。有上一頁、下一步、頁籤、返回收藏與持久化重新開啟。
+- **三色語義及文字同步**：綠 = 本人操作、藍 = 系統執行中、橘 = 待使用者輸入；另有操作狀態的即時文字，不能只依顏色判斷。
+- **E2B 模型**：首次未安裝才在新增頁顯示下載卡，已經驗證的模型會將原卡移到「裝置 → 查看本機 AI 詳細狀態」的隱藏折疊區；保留 `files/models/`，沿用 Android 0.1.1 裡的 `ModelReusePolicy`，不應因 UI／同簽章升級重新下載 2.59 GB。
+- **重複與長文**：原圖/OCR、Gemma 可能目標、Goal 本人確認、條件確認各在獨立步驟；「只收藏」不再是無實際效果的冗餘按鈕，改為返回收藏；期限／撤銷／本地預覽及本地分享審核歸入進階折疊，不修改原本的 DB、隱私限制、對話框確認或伪造拒絕邏輯。
+- **UI 自動測試**：Vitest 新增 `ui-flow.test.ts`，測試順序、內容歸類、上一頁下一步、已驗證 E2B 自動收起、條件必須有 Goal。原 TypeScript／Vitest／Rust CI [PASS](https://github.com/NFF98/CKM/actions/runs/44666375969)；原生 Kotlin 編譯／測試 [PASS](https://github.com/NFF98/CKM/actions/runs/44666375972)。
+- **使用者固定簽章更新 APK**：`CAKAMI-v0.1.2-UI-UPDATE-ARM64.apk`，SHA256 `e4eac8205070fa5ef7e9e3720904e1c9ff5ba40e8f6cfd4d73f205f0a7f4074d`，Android app ID `com.nff98.ckm.dev`、versionCode `1002`、versionName `0.1.2`，以與 CLEAN 0.1.1 完全相同 cert `a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5` 離線固定簽章。編譯及驗證 [PASS](https://github.com/NFF98/CKM/actions/runs/44666652984)，真機 E2B 保留／GUI 仍 **NOT_RUN**。
+- **未更動範圍**：11/19 使用者反映的 B03→B04 Action Intelligence 價值整合／能否提出有用下一步 **仍為 NG，這次僅調整 GUI，不能冒稱修好該缺口**。
+- [一輪真機測試步驟](../../test/US01_GUI_012_PHONE_TEST.md)。
