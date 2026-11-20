@@ -896,7 +896,7 @@ async function renderOcrEditor(assetId: string): Promise<void> {
   save.textContent = "保存人工修正";
   const privacy = document.createElement("p");
   privacy.className = "fineprint";
-  privacy.textContent = "圖片先經本地 ML Kit OCR，再用和純文字相同的 Gemma 意圖引擎；無文字保留 vision_unknown。Gemma 沒有接收圖片像素，也不使用雲端 AI。";
+  privacy.textContent = "OCR 已修正照片旋轉方向；模糊、反光或字太小仍可能辨識錯。請核對並修正後，再看下一步。全程在手機處理。";
   panel.append(heading, state, recognized, run, field, save, privacy);
   preview.append(panel);
   applyAssetStep();
@@ -932,7 +932,7 @@ async function renderOcrEditor(assetId: string): Promise<void> {
           // US-01B: route OCR text through the existing Rust/Gemma command.
           preview.querySelector(".model-panel")?.remove();
           const readable = Boolean((result.correctedText ?? result.rawText ?? "").trim());
-          void renderModelPanel(assetId, readable);
+          void renderModelPanel(assetId, false);
           if (readable) applyAssetStep("understand");
           if (!readable) {
             state.textContent = "vision_unknown：圖片沒有可讀文字，不能假裝看懂像素。可人工修正或只收藏。";
@@ -962,7 +962,7 @@ async function renderOcrEditor(assetId: string): Promise<void> {
           // 來源變更後不可繼續顯示舊模型建議。
           preview.querySelector(".model-panel")?.remove();
           // Source SHA is rechecked by Rust: old intent candidates cannot be reused.
-          void renderModelPanel(assetId, true);
+          void renderModelPanel(assetId, false);
           applyAssetStep("understand");
         }
       } catch (error) {
