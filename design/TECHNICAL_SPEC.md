@@ -50,6 +50,24 @@ Android UI (Tauri v2 + TypeScript)
 - 不得因模型載入失敗改走 Cloud AI 而未經產品決策；可保留手動建立私人草稿，但 B03 不因此被視為完成。
 - 真機 Evidence 必須註明機型、Android/API 版本、CPU/GPU/NPU 後端、冷／熱載入、延遲、峰值記憶體、耗電、OCR／意圖正確率及是否斷網。
 
+### B03／B21 Gemma 模型獨立更新與安全回退（User 決策：2026-11-19；新增設計，尚未實作）
+
+**SOURCE／已核准產品行為：APK 更新不等於模型更新。** Gemma 是 App-private 的獨立版本化檔案；已下載且驗證成功的同一模型版本，不應因 APK 的 UI、Rust、SQLite、Prompt 或一般引擎修正而重下載。相同 Android applicationId、相同簽章的**覆蓋更新**應保留模型及使用者私人資料；Android **解除安裝、清除資料、裝置更換**則通常會失去 App-private 模型，不能承諾保留。若 modelId／版本／SHA-256／runtime 相容性均未改變，啟動時使用現有模型。
+
+**SOURCE／已核准的升級安全順序：** 新模型確實值得升級（例如正式修復、顯著更佳日文理解、必要相容性或新能力）才推送升級提示；**先下載新模型 → 完整校驗 → 切換至新版本 → 確認可載入／可推論 → 才清理舊版**。下載、驗證或啟用失敗一律繼續使用舊版；離線仍使用舊版，絕不因更新檢查失敗封鎖既有 AI，也不切換到 Cloud AI。
+
+**實作介面／資料結構（PROPOSED，待 B03／B21 Coding）**：
+
+1. 以版本化 Model Manifest 描述 `modelId`、`modelVersion`、`sha256`、`bytes`、`format`、`runtimeCompatibility`／`minAppVersion`、來源 URL、版本說明及驗證簽章。只有 App 信任的簽章／固定核准清單能授權新模型；網路 URL 或遠端 Manifest 不能任意決定任務 Prompt、私人資料上傳或 AI 推論端點。模型升級不得默默降級。Manifest 格式、簽章密鑰管理與端點尚 **OPEN**。
+2. Rust 控制狀態：`ready(current)`、`update_available`、`downloading(candidate)`、`verifying`、`staged`、`activating`、`rollback`、`failed_keep_current`。使用 Android 原生下載 Adapter；Wi-Fi 預設、行動網路須使用者同意。可暫停／續傳，失敗不刪已可用的舊模型，重開機／重啟 App 須可恢復下載。
+3. 使用 App-private、**不同版本**的暫存／模型路徑；新檔驗證大小、SHA-256 和相容性後，才原子更新「目前啟用模型」紀錄（含回退指標）。不可覆寫正在推論的舊檔；切換時需處理 LiteRT-LM 已載入模型的生命週期／鎖定。更換啟用版本需避免 crash 中途造成無模型可用。
+4. 新模型切換後的載入與最小本地推論 Smoke Test 必須成功，才能將它標成 `active_verified`。若載入、推論或完整性檢查失敗，回退到舊模型並回報錯誤，不可把「SHA 通過」當成「推論已通過」。
+5. 儲存空間不足以**同時保留舊模型與新模型＋暫存**時，不強制升級、不刪舊檔騰空間；UI 告知所需空間並允許以舊版繼續使用。只有新版啟用／驗收成功後才依清理政策刪除不再需要的舊版。完整多版本磁碟預算與保留期限尚 **OPEN**。
+6. 新版檢查在網路可用時非阻斷式執行，失敗可以下次再檢查；**不因每次 App 啟動、APK 升級、或每次呼叫 Gemma 就無條件下載 2.59 GB**。可用者先收到版本說明／預估大小與「稍後／更新」選擇；正式檢查頻率、是否允許緊急強制升級為 **OPEN**，不得在 MVP 擅自實作。
+7. 模型權重的下載源可以是 Hugging Face 或未來的 CAKAMI 自有儲存／備援 CDN，但必須使用經核准的版本與固定檔案雜湊；**下載公開模型檔不代表把私人 OCR、圖片、筆記、Prompt 發往遠端**。需遵守模型再散布授權及來源完整性要求。
+
+**實作狀態：NOT_IMPLEMENTED**。目前 B03 的單一固定模型自動下載／Range 續傳／SHA-256 驗證，**不等於**版本化 Manifest、雙槽保留與原子切換、回退或遠端升級提示已完成。此節是後續 B03 維護與 B21 Release Gate 的正式設計需求。
+
 ### E2B → Rust 受控候選資料（PROPOSED JSON schema shape）
 
 ~~~json

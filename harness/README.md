@@ -24,6 +24,14 @@
 
 **不會把「未執行真機測試」當成程式碼 PR 的 CI 失敗**。未跑的 Android／iOS 原生測試、OCR／E2B 實測、Supabase RLS 等，明確顯示 `NOT_RUN`。但在發布 MVP 時，真正需要的 P0 測試必須完成，不能假稱 PASS。
 
+## APK 批次建置規則（使用者決策，2026-11-18）
+
+- **日常開發**：每個功能完成後先執行相關 TypeScript／Rust 單元測試和 Harness；將需 Android 真機測試的項目及狀態 `NOT_RUN` 記到對應 Sprint Progress。不因單一功能就提交新版 APK 或要求使用者安裝。
+- **批次驗收**：至少 **2 項可獨立驗收的功能**已完成 Coding、必要自動測試且可一起真機驗收，才安排一次 Android APK Build／Artifact，集中向使用者提供一個 APK 與合併測試清單。以功能數計算，不以 commit 數計算。
+- APK GitHub Workflow 只在 PR 被**主動加上 `apk-batch-ready` label** 時執行（或者明確手動 `workflow_dispatch`）；一般 PR 更新不會自動打包。標籤僅用於啟動一次工作流程，後續要打下一批須重新移除／新增標籤。
+- **安全／嚴重阻斷例外**：需要立刻驗證的 P0 安全修補、無法啟動 App 或關鍵回歸，可明確記錄原因並提前製作 APK；不能把測試留待最後才發現關鍵問題。
+- 不變更 B-ID 的真機驗收標準、不聲稱尚未執行的真機測試 PASS，也不把「至少 2 項」變成新的治理或合併審批 Gate。
+
 ## iOS 可移植性
 
 Day 1 必須讓 TypeScript、Rust 與配對規則盡量共用；Android/iOS 的相機、相簿、OCR、E2B runtime 用平台 Adapter 區隔。**不能把 Android 專用實作當成 iOS 已通過測試**。

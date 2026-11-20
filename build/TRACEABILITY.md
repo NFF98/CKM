@@ -1,8 +1,19 @@
-# CKM｜B01–B21：產品規格 → Sprint → Acceptance 追溯表
+# CKM｜User Story → B01–B21 → Sprint → Acceptance 追溯表
 
-> **用途：Coding Agent 開始工作前先查這張表**，不要只讀 Sprint 計畫，更不能由 Sprint 表格憑空生成產品規則。  
+> **用途：Coding Agent 先選 US-01／02／03 的真實使用者流程，再查對應 BXX 實作及 Acceptance。** 不能只看 Sprint、只挑 BXX 完工，也不能把 CI PASS 冒充使用者流程 PASS。  
 > **狀態**：設計／測試的追溯目錄，**不是**額外審批或治理 Gate；Coding 已開啟。  
 > 來源：正式產品規格 [Business v1.2](../design/doc/CAKAMI_Business_Proposal_v1.2_MVP_Aligned.md)／[System v1.7](../design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx)／[Functional v1.8](../design/doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx) 及 [Bible B01–B21](BACKLOG.md)。
+
+## 0. 使用者故事是交付主線（2026-11-19 已決定更正 Sprint）
+
+| 先選 User Story | 再看相關 BXX | 一次可見完整結果 | 跨模組測試 Gate | 目前狀態 |
+|---|---|---|---|---|
+| **US-01：輸入→理解→意圖候選→必要追問→本人確認** | **B02→B03→B04→B05→B06→B09**（B01 Bridge；B07 私人生命週期；B08 本地分享預覽） | 純文字／圖片，不需使用者重新從空白輸入 Goal；最後 Rust 有真確認事件／SQLite 私有 Intent／合法有效 Concepts。沒有足夠線索就 UNKNOWN、可只收藏 | [US-01-01～07](../test/ACCEPTANCE_SPEC.md)、T01–T05/T09–T13、AI-LOCAL，真 Android App | **FAIL/NG**：2026-11-19 Gemma 只解釋 `パクる`，沒有完成真正候選→確認 |
+| **US-02：本人授權→Cloud 找到合適真人** | **B08→B10→B11→B12→B13→B14→B15**（含 B07 撤銷/到期） | 已確認 Intent → 本人同意要分享的最少資料 → 真 Cloud 同目標／Need↔Offer 候選或合法 0 人 | [US-02-01～04](../test/ACCEPTANCE_SPEC.md)、T06–T08/T13、E2E-03/04，真 A/B/C Cloud 帳號 | **NOT_RUN** |
+| **US-03：邀請→真人合作→雙方完成→可信結果回本地** | **B16→B17→B18**，連接 B02/B07 的私有 Outcome（新設計需核准欄位） | A/B 雙方接受、Chat、15 分鐘、雙方結案，Server 只產生合法結果，且本人能在本機查看 | [US-03-01～04](../test/ACCEPTANCE_SPEC.md)、E2E-01/05、Cloud 權限/Outcome 重播/離線 | **NOT_RUN** |
+| **全流程整合發布** | **B19／B21**；B20 仍 P1 | US-01→US-02→US-03 跨真機/真 Cloud 全部 PASS；原 T01–T13／E2E-01～05 保留 | [Sprint 3](sprints/SPRINT-03_RELEASE.md) | **NOT_RUN／NO-GO** |
+
+**順序不是再從 B01 開始。** 目前既有 B01–B05 Coding/CI 已建立；先做 [Sprint 1 的 US-01A](sprints/SPRINT-01_LOCAL_AI.md)：「純文字 → 真 Gemma 意圖候選 → UI 選擇/修改 → Rust 本人確認 → SQLite」，再補圖片、B05/B06/B09。以 [Sprint 1 真實進度](sprints/SPRINT-01_PROGRESS.md) 為準。原 B-ID 的細部責任／依賴沒有被改掉，依照 [Build Bible](BACKLOG.md) 查核。
 
 ## 1. 必須一起閱讀的四份實作規格
 
@@ -63,15 +74,15 @@
 ## 4. 如何用這張表 Coding／Debug
 
 ```text
-選 B-ID
- → 查 Bible B-ID 原始需求
- → 讀本表所列 GUI／Functional／Technical Spec（SOURCE／PROPOSED／OPEN）
- → 依 Sprint AC Coding
- → 依 Acceptance Spec 的正式 Test IDs 寫測試
- → Debug／重測
- → 記 GitHub PR + Commit + 實際 Evidence
+選 US-01／US-02／US-03 的一段完整使用者流程
+ → 定義輸入、預期結果、拒絕／UNKNOWN／離線／安全負例
+ → 映射受影響的 BXX，查 Bible 原始需求與允許的資料/權限
+ → 一起接通 UI → Gemma／Rust → SQLite／Cloud 的真正狀態
+ → 使用同一 Fixture 跑跨模組 Contract Tests 與原 T/E2E/AI-LOCAL
+ → Android／Cloud 真實 User Story 驗收，NG 就跨 BXX 修正
+ → 分別更新 US Gate 與 BXX Coding/CI Evidence，記 PR／Commit
 ```
 
 發現差異：先核對既有已批准產品決策；工程命名／實作內部細節可自行設計並測試。**只有會改變公開資料、安全、對人行為的產品選項，才需 Human 決策**。記錄受影響 B-ID，不全局停止 Coding。
 
-**驗證狀態**：本表是文件之間的完整對應，**不是已執行的產品測試報告**。所有沒有真實 Evidence 的 B-ID 都仍未 PASS。
+**驗證狀態**：本表是追溯目錄，不是已執行的 Test Report。**US-01 實際真機 NG；US-02／03 NOT_RUN。** BXX 可能已有 Coding／Unit Tests PASS，但不能替代使用者完整體驗的 Gate。產品 PASS 必須有真機／真 Cloud Evidence。

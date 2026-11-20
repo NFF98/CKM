@@ -1,9 +1,74 @@
 # CAKAMI｜MVP 驗收測試參考規格（B01–B21）
 
-> **狀態：作為 Sprint AC 與 Coding 測試的參考依據；SOURCE 測試保持原定義，新增提案仍需核對。所有 App 測試均未執行，不可宣稱 PASS；Coding 不需要等待整份文件 LOCKED。**  
+> **狀態：作為 Sprint AC 與 Coding 測試的參考依據；SOURCE 測試保持原定義，新增提案仍需核對。已有部分 Android 真機測試：B02 保存與 B03 OCR／詞義理解子路徑使用者回報可用，但 **US-01 跨模組 Action Intelligence 真機 NG**；未執行的項目不得宣稱 PASS；Coding 不需要等待整份文件 LOCKED。**  
 > 日期：2026-11-17；適用：Android-first，18+ JLPT N2 Study Match，S01–S09＋S04a，B01–B21。  
 > 唯一 Build Backlog：../build/BACKLOG.md；測試基準：../design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx §15.5／§16.5 的 T01–T13、Functional v1.8 的四道 Gate；GUI Draft：../design/GUI_UX_SPEC.md；Technical Draft：../design/TECHNICAL_SPEC.md。  
 > **SOURCE** 表示已由設計鎖定的必測行為；其餘 Test Case IDs 與 Test Mechanism 是提案，需批准後方為正式驗收矩陣。**未執行 ≠ 通過**。
+
+## User Story End-to-End Gate（2026-11-19 User 決策：以使用者旅程交付）
+
+**新開發準則：** 模組 BXX 可以分別 Coding/CI，但只有使用者從起點操作到最後有**真狀態**，才能把 User Story 判為 PASS。既有 `T01–T13`、`E2E-01～05`、`AI-LOCAL` 不改名、不刪除；新 `US-` IDs 是**跨 BXX 整合驗收**，不取代安全單元測試。詳細順序見 [User Story Sprint Plan](../build/SPRINT_PLAN.md)。
+
+### US-01：文字／圖片 → 本地理解 → 可能意圖 → 追問 → 本人確認（**目前 FAIL/NG**）
+
+| Test ID | 使用者真實操作 | PASS 必須包含 |
+|---|---|---|
+| **US-01-01** | Android App 直接輸入純文字：「我想找人一起練 JLPT N2 口說」 | **不依賴 OCR**，手機 Gemma 實際提出基於原文的私人 Goal 候選；使用者可一鍵採納或修改→本人確認→Rust SQLite 保存有來源、確認事件與版本的私人 Goal；重啟仍在，**不能要求從零自己重寫 Goal** |
+| **US-01-02** | 純文字「パクる」或其他欠缺情境的短語 | 誠實顯示不知道真正 Goal（UNKNOWN）、允許只收藏或問真正能區分意圖的問題；**不能強迫歸類成 Study／找學伴、不能自動公開** |
+| **US-01-03** | Drop 有日文的 N2 圖片→真正 OCR→Gemma→選/改私人 Goal | 和純文字**同一套 Intent Pipeline**；更正 OCR 後舊候選失效；原圖、OCR 沒有未授權 Cloud 呼叫 |
+| **US-01-04** | 輸入 Fashion/Car/混合語境的文字或截圖，手機歷史主要是 Study | 能保留非 Study／UNKNOWN，不強制 N2 目標；現有 OCR-only 不可宣稱理解無文字照片像素；Fashion/Car 不可於 P1 對外配對 |
+| **US-01-05** | 使用者確認 Goal 後，AI 提出合法 Need/Offer/期限等**僅已批准 Registry Concepts** 候選 | 本人可核對／編輯後才確認；B05 Rust 強制來源、scope/expiry/版本；未核准 Concepts 維持 UNKNOWN，**不得 AI 自創已合法欄位** |
+| **US-01-06** | 追問缺資訊及實測 8 個活躍 Concepts 上限 | B09 每次主動 **0～3 題（含 Goal 確認）**，多次重試不重問；B06 SQLite/Rust 硬限制 **最多 8 種已核准有效 Matching Concepts**；第 9 個必要概念不能悄悄覆蓋既有硬條件（T10–T13） |
+| **US-01-07** | 使用者按「只收藏」、取消確認，或離線後修改／撤銷 | 無自動 Goal/Consent/Cloud；已確認版本/事件真實、狀態可回讀；B07/08 只提供合法私人操作／預覽，不假裝 Cloud 已同步 |
+
+### US-01B／C／D 的可重現工程 Test Case 補充（PR #17，2026-11-19）
+
+> 以下為**提交的合成跨模組測試**，不是 Android 實測 PASS；若最新 CI 尚未完成或失敗，按 PR Checks 修復後才列為工程 PASS。不能取代上方的真機 US-01-01～07。
+
+| Test ID | 新增測試與驗收對象 | 新 PR Engineering 狀態 | Android E2E |
+|---|---|---|---|
+| **US-01A-MULTI-01** | 原文明確想真人合作時，可得到 1～3 個具原文字面證據的不同私人 Goal 候選；每個可分別採納、修改並透過 B04 本人確認。來源不充分則 UNKNOWN；舊單一候選 SQLite 可讀。 | Rust／SQLite／TypeScript 合成跨模組測試已提交；跨語境真機品質未量測 | **NOT_RUN** |
+| **US-01B-OCR-01** | Image → 真本地 OCR 輸出文字 → 共用 Gemma Rust Candidate → B04 本人確認 → SQLite 重開；未經確認只保存私有候選。 | Rust 跨模組合成 OCR 輸入測試已提交；不假裝是 ML Kit 真機結果 | **NOT_RUN** |
+| **US-01B-OCR-02** | 修正 OCR → 先前來源 hash 的模型候選失效，舊回覆不能覆寫；Fashion/Car 的非合作內容為 UNKNOWN。 | Rust SQLite 回歸測試已提交 | **NOT_RUN** |
+| **US-01B-VISION-01** | 無字圖片／OCR 空結果不得以文字模型自稱看懂圖片像素。 | Rust `MODEL_INPUT_UNKNOWN` 測試／UI `vision_unknown` | **NOT_RUN** |
+| **US-01C-SLOT-01** | 確認後來源、版本、事件合法方可分配私有 B06 Slot 0–7；Rust Transaction 與 SQLite CHECK／UNIQUE／Trigger 均生效。 | Rust SQLite 真表測試已提交；T01 **僅有 `study.jlpt_level`** | **NOT_RUN** |
+| **US-01C-SLOT-09** | 8 個不同已批准且有效的 Matching Concept，再加入第 9 類：Rust、SQLite 都拒絕且不丟掉前 8 類。 | **BLOCKED：T-01 未核准其他類別**；只能驗證 slotIndex=8／直接 SQL／UNKNOWN 不通過，不能冒充完整 8＋1 | **NOT_RUN** |
+| **US-01C-Q-01** | B09 先看 UNKNOWN 才選一個必要追問，一次最多一題，最多兩次智能補問，加上本人 Goal 確認的最多三個關口；0 題合法。 | SQLite ordinal 1–2／唯一 pending／本人回答存證／來源版本／去重測試已提交；有用性待真機 | **NOT_RUN** |
+| **US-01D-LIFE-01** | 本人明確設定未來一次性截止時刻；到期不能保留可用 slot，且不可把「週六」當每週。 | Rust SQLite expiry＋失效 Gate 測試已提交 | **NOT_RUN** |
+| **US-01D-REVOKE-01** | 離線本地撤銷 → 立即阻止 Goal 再編輯／配對 slot；重新開機仍撤銷；不能假裝 Cloud 已 ACK。 | Rust SQLite revision／事件／cascade／重開測試已提交 | **NOT_RUN** |
+| **US-01D-PREVIEW-01** | 只顯示本機 Goal + 合法 Concept 候選清單；`consentRecorded=false`、`canUpload=false`；原圖／OCR／私人補問不進預覽 Payload。 | TypeScript Contract＋Rust Read-only 查詢已提交；最終雲端欄位尚未核准 | **NOT_RUN** |
+
+**範圍區別：** B07 本地撤銷不等於已有 Cloud 端紀錄被成功撤回。B08 **尚無真實逐項 Consent 的 Cloud 發布實作**，所以不能聲稱 US-01D／B08 全部完成。跨域 Fashion/Car 只核對模型理解與 UNKNOWN，**不能**越權在 P1 配對真人。
+
+**US-01 PASS 條件：** US-01-01～07 的真 Android User Journey（含整合的 Rust/SQLite／錯誤測試）均有 Evidence，相關 BXX P0 Gate 也 PASS。**現在整條 US-01 = FAIL**，因 Gemma 真機只解釋文字、沒有可用意圖候選→確認的連接。既有 B03 OCR/詞義及 B05 Registry CI PASS 不能抵銷這個 NG。
+
+### US-02：本人授權 → Cloud 真正找到相容真人（**NOT_RUN**）
+
+| Test ID | 使用者真實操作 | PASS 必須包含 |
+|---|---|---|
+| **US-02-01** | 真 A/B 帳號有各自已確認的私人 N2 Intent → 在手機逐項預覽與同意分享 | 同意前 Cloud 不存在公開 Intent；同意後只送核准最少欄位，Server 驗證 ownership/8-slot/expiry/version/Consent；Cloud 無模型推論 |
+| **US-02-02** | A 找相容的 B，以及沒有符合者情境 | 相同 Goal／互補 Need↔Offer 和時間／硬條件都正確；真的找到合法候選或真 0 人；不能虛構真人／相似度假成功 |
+| **US-02-03** | B 封鎖、撤銷、過期、條件不合、跨帳號直打 API | RLS／Server 拒絕；離線撤銷本機排除、重連後 Server ACK、其他人不可再搜尋 |
+| **US-02-04** | Pair-only 必要追問 | 最多 2 題，答案僅 Pair scope、限時有效；不得改永久 Profile 或繞過硬限制 |
+
+**US-02 PASS 條件：** US-02-01～04 有雙帳號＋真 Supabase E2E/攻擊負例、Server 實際紀錄、合法輸入輸出 Evidence；不是 UI 的候選 mock。
+
+### US-03：真合作 → Server 可信完成 → 自己手機留下結果（**NOT_RUN**）
+
+| Test ID | 使用者真實操作 | PASS 必須包含 |
+|---|---|---|
+| **US-03-01** | A 邀 B，B 接受／拒絕／封鎖不同情境 | 只有雙方合法接受才啟 Chat；第三人和不合法狀態呼叫 API 被拒，重放/並發不能重複 Session |
+| **US-03-02** | A/B 真文字 Chat 並完成 15 分鐘 Session → 各自確認 | Server 以已核准計時規則及兩份不同使用者確認恰建立 **1** 筆可信 COMPLETED |
+| **US-03-03** | 少於 15 分鐘／單方確認／No-show／取消／越權/重試 | 不計 COMPLETED、不重複計算；Chat 訊息數／點擊不等於完成 |
+| **US-03-04** | 本人登入手機同步/重試已完成 Outcome，重新開啟 App | **僅本人合法可讀且事前核准的** OutcomeReceipt 入本地 SQLite，供下一次已確認上下文使用；另一人的私人資料/跨人聚合不得偷傳。具體分享欄位未核准則 BLOCKED 而非偽裝 PASS |
+
+**US-03 PASS 條件：** US-03-01～04 + B16～18 Server/RLS/SQL/Android 真 E2E。未核准的 OutcomeReceipt 權限與保留期須正式決策；不得以合成手機結果代替可信 Server 完成。
+
+### 數據準確率與模型比較（設計假說，不是當前實際 PASS）
+
+- **不能**以 E2B 自報「60–90% confidence」當作意圖準確率，也不能因用戶按確認就宣稱 AI 預測 90%。應比較「AI 初次意圖 Top-1 與獨立真人 Ground Truth 一致率」「應為 UNKNOWN 時的正確拒判率」「經少量追問後與真人意圖一致率」，另報不合適配對率／問題數／完成合作比率。
+- 使用者提出的 **60～90% 是欲驗證的目標區間**，尚非已完成數據；目前 [AI-TEXT-8](#ai-text-8純文字--意圖候選--b04b05-確認--b06-最多-8-slots設計草案not_run) 提的開發 ≥60%／確認後 ≥90% 只屬建議門檻，待真人標註集及 User 最終決策。分純文字、OCR、Study、Fashion、Car、UNKNOWN 報告；低證據不亂猜也算成功的安全性能力。
+- **B20 仍 P1**，不因對照研究變成 B21 必過的硬性 Gate；但所有已聲稱的準確率必須有測試 Evidence。
 
 ## 已核准驗收紅線：Phase 1 不使用雲端 AI（2026-11-17）
 
@@ -12,6 +77,69 @@
 - **追加測試 AI-LOCAL-02（B03／B12／B19）**：模型故障／超時／無法載入時，監控網路與伺服器端日誌，確認沒有轉呼叫任何外部 OCR／LLM／VLM／Embedding 服務；UI 明示失敗並允許人工修正。
 - **追加測試 AI-LOCAL-03（B11–B13／B19）**：Cloud API／Supabase 僅處理已授權 Payload、資料庫查詢／向量距離／邀請與聊天，不在 Server 或 Edge Function 呼叫模型推論；本地產生的 Embedding 若要上傳，必須有明確 Consent。
 - 以上測試目前均為 **NOT_RUN**，不宣稱模型已在 Android 驗證。
+
+## B03／B21 模型更新生命週期驗收（User 已核准產品規則，2026-11-19）
+
+**以下新測試均為 NOT_RUN；新增設計不等於完成新版更新器。** 以 Android 真機 + App-private 模型檔 + 網路／儲存故障注入為準。
+
+| ID | 操作／故障注入 | 必須驗收 |
+|---|---|---|
+| AI-MODEL-01 | Gemma 模型已完成 2.59 GB 下載，安裝同簽章／同 applicationId 的新 APK（只改 UI／Rust／Prompt） | 模型版本與 SHA 不變、不觸發 2.59 GB 重下載、私人 SQLite 資料保留；飛航模式仍可推論 |
+| AI-MODEL-02 | 發佈新模型版本，有 Wi-Fi／無 Wi-Fi 各測一次 | 有版本說明／大小和可稍後更新的選項；無 Wi-Fi 或暫時拒絕時舊版正常離線運作，不強迫重下載 |
+| AI-MODEL-03 | 新版下載中斷、App 中止、重啟或 CDN 不可用 | 舊版不被刪除；可從有效部分續傳或安全重試，不能把殘檔當已安裝 |
+| AI-MODEL-04 | 新模型檔 SHA 錯誤、來源異常、Manifest 不受信任／不相容 | 新模型拒絕啟用；舊模型與資料不變；錯誤可辨識，沒有遠端 AI fallback |
+| AI-MODEL-05 | 新版本完整下載且校驗通過，但 LiteRT-LM 載入失敗或最小推論失敗 | 回退舊版仍可使用；不能把下載完成或 SHA 驗證當成推論 PASS |
+| AI-MODEL-06 | 模擬新舊兩模型同時保留時手機剩餘空間不足；切換中途 crash | 不刪舊版以騰空間；重啟後仍能辨識並使用最後成功的版本，無破損啟用指標 |
+| AI-MODEL-07 | 新模型啟用及本地 Smoke Test 成功 | 才可標示已升級、按政策安全回收舊版；記錄 modelId、modelVersion、hash、runtime 與切換／回退證據 |
+| AI-MODEL-08 | 解除安裝 App 後重新安裝（負例） | UI／文件必須警示 App-private 模型通常遺失；不可把此情況算成「APK 更新造成重下載」Bug |
+| AI-MODEL-09 | Rust Bridge、模型已下載、模型推論三狀態交叉驗證 | 狀態互不假冒：模型校驗通過不等於推論已通過；更新失敗不顯示為 Rust 連線失敗 |
+
+**Gate：** B03-M1 與 B21-M1 的 P0 驗收需要上列必測情境的可重現真機 Evidence；尚未實作／尚未測到時一律 NOT_RUN。規格依 [Technical](../design/TECHNICAL_SPEC.md)／[Backlog](../build/BACKLOG.md)。
+
+## B03→B04 Action Intelligence 真機產品目標 NG（2026-11-19）
+
+- **使用者提供真機結果：NG／FAIL**。輸入日文詞彙 `パクる`，目前 Android CAKAMI 已能 OCR 與 E2B 解釋詞義，但**沒有提供真正可執行的下一步，使用者仍不知道要做什麼**。這個新端到端產品價值驗收不得標示 PASS。原 S1-AC03 的「詞義可理解／不能把內容強行變成 Goal」與此新要求不同；前者可單獨 PASS，不等於新要求已完成。
+- **ACT-01（目前 FAIL；下次必須復測）**：Drop `パクる` → 顯示有根據的內容解釋 + 少量相關行動候選（例如複習、練用法、本人確認找學伴或只收藏）→ 使用者**不必重新打字**，選擇一個動作 → App 真正執行並保存可驗證的結果。**只顯示選項但按下無效果也算 FAIL**。
+- **ACT-02（NOT_RUN）**：無上下文的字詞不能猜出唯一 Goal、不能自動確認學伴／分享／公開；使用者只收藏或取消時，不建立意圖。
+- **ACT-03（NOT_RUN）**：完整句子、資訊複雜截圖、OCR 更正後仍能提出適合的有限選項；不確定時誠實顯示；飛航模式本地執行，且重開 App 保留已選的本地結果。
+- **狀態語義**：B03／B04 既有 Coding 仍在，但 Action Intelligence E2E **FAIL，不得稱為已完成產品目標**；修復方案尚未 Coding／APK 驗收。B05 Registry CI PASS 不等於本項通過。
+
+## AI-INTENT：跨領域本地意圖引擎驗收（DESIGN PROPOSAL；2026-11-19）
+
+**狀態：NOT_RUN。** 產品核心須有通用領域識別、Intent/Content 分離、可拒絕強制分類、經本人確認的合作需求及安全 Cloud 投影。P1 只上線 Study N2，Fashion/Car 是**離線跨領域泛化／負例測試**，不准因此暗中啟用 P2+ 雲端配對。
+
+| Case | 輸入／條件 | 必須發生的結果 |
+|---|---|---|
+| AI-INTENT-01 | 只有 `パクる` | 可解釋詞義；`domain=unknown`／`goal=unknown`；不得擅自建立 Study Goal 或傳 Cloud |
+| AI-INTENT-02 | JLPT N2 教材中的 `パクる`，有真實教材來源證據 | 可建議 Study 相關私人合作意圖；需要本人挑選／修改確認才建立 Goal |
+| AI-INTENT-03 | 時裝設計討論 `パクる`，與日文學習無關 | 不得強制歸 Study；可辨識 Fashion 語境／保留 UNKNOWN；不得自動假設要購買、模仿或找合作人 |
+| AI-INTENT-04 | 汽車改裝文章 `パクる`，與日文學習無關 | 不得強制歸 Study；可辨識 Car 語境／保留 UNKNOWN；不得自動推定求助或要買零件 |
+| AI-INTENT-05 | 同時含 Study 與 Fashion/Car 線索，或證據互相衝突 | 保留多個假設、尋找最小關鍵區別問題／允許只收藏；模型不能偽造已確認 Goal |
+| AI-INTENT-06 | 手機過往 20 筆 Study，但本次是明確 Fashion 截圖 | 不能用歷史覆蓋本次證據；不自動把 Fashion 映射為 N2 |
+| AI-INTENT-07 | 沒有文字的服飾／汽車照片，當前只裝文字 OCR 模型 | 誠實顯示 `vision_unknown`，不能宣稱看懂剪裁、車型或設計；未有真實 VLM Adapter 前不得算跨領域圖片理解 PASS |
+| AI-INTENT-08 | B03 候選缺 source、混入 confirmed/consent/visibility，或更正 OCR 後重讀舊候選 | Rust 擋下偽造狀態／缺來源／過期候選；原文已改則舊建議失效 |
+| AI-INTENT-09 | 合法候選但用戶按「只收藏／稍後」 | 無 Goal、無配對、無雲端同步；私人資料仍存在手機 |
+| AI-INTENT-10 | 用戶確認 Study Goal，B05 尚無正式 Need/Offer Concept | 保留 UNKNOWN，不用模型自創 Registry／Share 白名單；僅合法 B06/08/12 契約可同步 |
+| AI-INTENT-11 | 未上線 Fashion/Car Domain Pack 或未開放 Match Capability | 雲端拒絕發布/搜尋該領域；已核准 P1 Study 路徑仍正常 |
+| AI-INTENT-12 | B18 兩方有效完成，回傳本人可見 OutcomeReceipt；或只單方確認／低於 15 分鐘 | 前者同步回本地並可作下次可解釋的回饋；後者絕不當 COMPLETED；不得洩露另一方私人內容 |
+
+**建議評估方法**（非已達成結果）：用至少 100 筆 Study、100 筆 Fashion、100 筆 Car/Other／跨域、歧義與新類別保留測試集；區分「有充分證據的 domain 命中率」和「證據不足時有沒有選 UNKNOWN」，不可只靠總 accuracy；逐筆標記 AI 猜的 Goal 是否被本人更改，跨域錯誤率、誤發布率、第一次有效 Intent 所需操作、Android 推論耗時與離線可用。與「Study 寫死規則」「固定幾個動作按鈕」做公平對照，未通過之前不得宣稱跨域 MOAT。
+
+此節對應 [Universal Intent Engine 設計草案](../design/ACTION_INTELLIGENCE_ARCHITECTURE_v1_DRAFT.md#1a-跨領域共用的真正大腦universal-intent-engine2026-11-19-user-方向設計草案)，並需在正式 domain 開放前逐領域增加真實視覺與多人端到端驗收。
+
+## AI-TEXT-8｜純文字 → 意圖候選 → B04/B05 確認 → B06 最多 8 slots（設計草案，NOT_RUN）
+
+| Case | 操作 | 必須驗證 |
+|---|---|---|
+| AI-TEXT-01 | **純文字**「想找人一起練 JLPT N2 口語」 | 不經 OCR；B03 產生有證據的私人 Study/Goal 候選；B04 可直接選擇/編輯並本人確認；B05 僅核准 Concept 能確認；不能自動 Consent |
+| AI-TEXT-02 | **純文字**「パクる」 | 詞義可解釋；意圖/領域保持 UNKNOWN；不能依 P1 市場或過往偏好強制認定找 N2 學伴；不填滿 8 slots |
+| AI-TEXT-03 | **純文字**「想找人一起研究 BMW E46 改裝，週末有空」 | Domain 可為 Car；Goal/Need/主題/時間作獨立候選，Offer/精確時間/地點/技能 UNKNOWN；不得把 8 個展示面向直接算作 8 個合法 Matching slots；P1 不對外配對 Car |
+| AI-TEXT-04 | B09 初次 Goal 確認及追問 | 最多 **3 題** AI 主動詢問（含 Goal 確認），一個答案可以確認多個合法概念；已足夠可 0～1 題，不得要求逐一回答 8 題 |
+| AI-TEXT-05 | B06 已有 8 種有效 Matching Concepts，嘗試新增第 9 種 | SQL/Rust 拒絕或請本人明確決定，絕不能自動刪掉硬條件；UNKNOWN/私人 Content 不占活躍 slot |
+| AI-TEXT-06 | 將 Gemma 報告的「85% confidence」當作可發布意圖 | Rust 必須拒絕用模型自報信心替代 B04/B05 本人確認與 B08 Consent；未有經驗校準不得把 85% 稱為準確率 |
+| AI-TEXT-07 | 用獨立標註純文字、OCR、跨領域語境與 UNKNOWN 測試集衡量意圖 | 分別報告**確認前 top-1 正確率、UNKNOWN 正確拒判率、確認後意圖一致率、誤確認率、問題數**；開發期 60%／確認後 90% 僅為候選目標、**尚未測得／待核定**，不得借用單一 N2 測試推論跨域成功 |
+
+所有 Cases **NOT_RUN**。這裡的**8 slots**依既有 Business v1.2 / System v1.7 是每個 Intent 最多 8 種**已核准、有效、可參與匹配的 Parameter Concepts**；8 個展示面向**不等於**固定 8 個必填欄位、8 題 AI 問題或 8 種一律要公開的屬性。見 [Action Intelligence Architecture v1 Draft](../design/ACTION_INTELLIGENCE_ARCHITECTURE_v1_DRAFT.md)。
 
 ## 1. Done 的唯一判準
 

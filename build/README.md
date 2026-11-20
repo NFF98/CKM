@@ -1,12 +1,12 @@
 # CAKAMI｜建置工作區（Build）
 
-**目前狀態：尚未開始程式實作。**
+**目前狀態：B01–B05 已有部分 Coding 與真機證據；US-01「理解→意圖→追問→確認」真機 NG（2026-11-19），US-02／03 NOT_RUN。**
 
 ## 首先閱讀
 
-**[MVP Build Backlog（B01–B21）](BACKLOG.md)** 是建置優先順序及驗收規範的唯一清單。
+**從 [User Story Sprint Plan](SPRINT_PLAN.md) 開始：先選 US-01／US-02／US-03，再查 [B01–B21 Backlog](BACKLOG.md) 的工程任務及原依賴。**
 
-**使用者已決定將 B01–B21 分為三個 Sprint。** Coding 前先開 [21 項規格追溯矩陣](TRACEABILITY.md)，對照 [GUI Spec](../design/GUI_UX_SPEC.md)／[Functional Spec](../design/FUNCTIONAL_SPEC.md)／[Technical Spec](../design/TECHNICAL_SPEC.md)／[Acceptance Spec](../test/ACCEPTANCE_SPEC.md)。 開發與驗收請由 [三 Sprint 執行總覽](SPRINT_PLAN.md) 進入，再查看 [Sprint 1／B01–B09](sprints/SPRINT-01_LOCAL_AI.md)、[Sprint 2／B10–B18](sprints/SPRINT-02_MATCHING.md)、[Sprint 3／B19–B21](sprints/SPRINT-03_RELEASE.md)。分期不更動 [Bible](BACKLOG.md) 原有功能、依賴或 P0/P1；不需每個 Sprint 再次批准才可 Coding。
+**2026-11-19 Sprint 已更正為 User Story 驅動。** Coding 前查看 [US→BXX 追溯矩陣](TRACEABILITY.md)，再對照 [GUI Spec](../design/GUI_UX_SPEC.md)／[Functional Spec](../design/FUNCTIONAL_SPEC.md)／[Technical Spec](../design/TECHNICAL_SPEC.md)／[Acceptance Spec](../test/ACCEPTANCE_SPEC.md)。執行入口：[Sprint 1／US-01 本地意圖](sprints/SPRINT-01_LOCAL_AI.md)、[Sprint 2／US-02 找真人＋US-03 完成合作](sprints/SPRINT-02_MATCHING.md)、[Sprint 3／US 全流程回歸與發布](sprints/SPRINT-03_RELEASE.md)。**現在先修 [US-01A 純文字→候選→本人確認](sprints/SPRINT-01_PROGRESS.md)**，不再重做 B01。三個 Sprint 不改既有 Bible 功能、依賴、P0/P1，也不需額外批准才能 Coding。
 
 ## 設計依據
 
@@ -14,12 +14,11 @@
 - [System Design v1.7](../design/doc/CAKAMI_System_Design_v1.7_MVP_8_Parameters.docx)：技術規格、Rust 驗證與 8-slot。
 - [Functional Design v1.8](../design/doc/CAKAMI_MVP_Functional_Design_v1.8_S01-S09_Sequences.docx)：S01–S09 及內外部 Sequence Diagram。
 
-## 預計實作區域（尚未建立）
+## 現有與規劃的工程區域
 
-- `app/`：Tauri v2／TypeScript 使用者介面。
-- `core/`：Rust Dynamic Parameter Controller、8-slot 與配對規則。
-- `mobile/`：Android 本地 OCR／模型接入。
-- `cloud/`：使用者同意後的後端 API、資料庫及聊天服務。
+- `app/`：既有 Tauri v2／TypeScript 使用者介面，Rust Core 位於 `app/src-tauri/src/`。
+- `app/src-tauri/plugins/`：既有 Android 原生 OCR／Gemma 模型 Bridge。
+- Cloud B10～B18：尚未實作的授權、匹配、聊天和成果服務（目錄名稱待工程設計）。
 
 每項功能必須包含測試與驗收證據；依賴套件應鎖定版本；**不得將 API Key、私人圖片或使用者資料提交到 GitHub**。
 

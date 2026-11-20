@@ -1,0 +1,61 @@
+name: CAKAMI Sprint 1 isolated Android test APK
+# One-shot safety escape hatch when an earlier APK was signed by a lost
+# ephemeral GitHub debug key. Distinct package: never overwrite installed app.
+# Does NOT share the old private SQLite or the 2.59 GB model.
+on:
+  pull_request:
+    types: [labeled]
+permissions:
+  contents: read
+
+jobs:
+  isolated-apk:
+    name: Side-by-side Android ARM64 test APK (no private data migration)
+    if: github.event.label.name == 'apk-isolated-test'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Upgrade npm for stable dependency install
+        run: npm install -g npm@11
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android SDK / NDK
+        run: |
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.0.12077973'
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: build/app/src-tauri
+      - name: Install project dependencies
+        working-directory: build/app
+        run: npm install --no-audit --no-fund
+      - name: Initialize Tauri Android project
+        working-directory: build/app
+        run: npx tauri android init --ci
+      - name: Build isolated CAKAMI Sprint 1 test APK
+        working-directory: build/app
+        run: npx tauri android build --debug --apk --target aarch64 --ci --config src-tauri/tauri.s1trial.conf.json
+      - name: Reject APK if it could overwrite original CAKAMI
+        shell: bash
+        run: |
+          APK="$(find build/app/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.nff98.ckm.dev.s1trial'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep 'Signer #1 certificate SHA-256 digest:'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cakami-sprint1-side-by-side-android-arm64-debug
+          path: build/app/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
