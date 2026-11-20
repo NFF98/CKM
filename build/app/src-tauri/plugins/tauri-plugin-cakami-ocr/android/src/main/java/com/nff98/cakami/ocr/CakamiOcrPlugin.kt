@@ -36,8 +36,6 @@ class CakamiOcrPlugin(private val activity: Activity): Plugin(activity) {
     private val executor = Executors.newSingleThreadExecutor()
 
     companion object {
-        const val OCR_ENGINE = "paddle_ocrv6_small_onnx"
-        const val OCR_ENGINE_VERSION = "6.0.0"
         const val MAX_IMAGE_BYTES = 8 * 1024 * 1024
         const val MAX_IMAGE_PIXELS = 16_000_000L
     }
@@ -59,7 +57,7 @@ class CakamiOcrPlugin(private val activity: Activity): Plugin(activity) {
             var bitmap: Bitmap? = null
             var rotated: Bitmap? = null
             try {
-                if (Build.VERSION.SDK_INT < 26) {
+                if (!PaddleOcrContract.supportsDevice(Build.VERSION.SDK_INT)) {
                     invoke.reject("OCR_MODEL_UNAVAILABLE")
                     return@execute
                 }
@@ -126,8 +124,8 @@ class CakamiOcrPlugin(private val activity: Activity): Plugin(activity) {
                 val response = JSObject()
                 response.put("text", result.results.take(500).joinToString("\n") { it.text })
                 response.put("segments", segments)
-                response.put("engine", OCR_ENGINE)
-                response.put("engineVersion", OCR_ENGINE_VERSION)
+                response.put("engine", PaddleOcrContract.ENGINE)
+                response.put("engineVersion", PaddleOcrContract.VERSION)
                 response.put("elapsedMs", SystemClock.elapsedRealtime() - started)
                 invoke.resolve(response)
             } catch (_: OutOfMemoryError) {
