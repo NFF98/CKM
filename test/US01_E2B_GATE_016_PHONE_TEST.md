@@ -19,3 +19,15 @@
 - CI：TypeScript 型別及 Vitest、Rust 單元測試 PASS；Native Android Kotlin 編譯 PASS；再交付有同簽章的 Android ARM64 APK，**不是 CI 隨機簽章 RAW APK**。
 - **品質評分**：JLPT 回答真的具有可選擇的用途、正確理解原文、避免自信胡說；若答案仍糟糕，才依同一批測項考慮換模型。
 - 手機測試尚未跑，實機品質狀態 **NOT_RUN**。即使 CI PASS 也不能說 E2B 準確率 PASS。
+
+
+## 2026-11-21 建置／固定簽章交付證據
+
+- [TS/Vitest、Rust 測試 PASS](https://github.com/NFF98/CKM/actions/runs/44826867063)：Rust 包含 `JLPT` 回傳三個私人候選但不建立 Goal；TypeScript 編譯成功。
+- [Android 原生 Kotlin 編譯／Unit tests PASS](https://github.com/NFF98/CKM/actions/runs/44826867046)。
+- [Android ARM64 v0.1.6 APK 建置 PASS](https://github.com/NFF98/CKM/actions/runs/44826888807)：`com.nff98.ckm.dev`、`versionCode 1006`、`versionName 0.1.6` 經 GitHub Actions Android SDK `aapt` 直接確認。
+- 最終私有 ChatGPT 安裝附件：`CAKAMI-v0.1.6-E2B-OUTPUT-FIX-ARM64.apk`，大小 **169,398,260 bytes**，SHA-256 `1999e359d6d5aeb10933014b6b8523a70bdde19b4499add95074097e15754a26`。
+- 已用與 CLEAN v0.1.4 **同一把固定私鑰**離線簽署；APK v2/v3 皆 PASS；憑證 SHA256 `a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5`。
+- 簽署前後 **961 個非 META-INF ZIP 條目 CRC／長度完全一致、AndroidManifest.xml 二進位完全一致**。模型私有檔 `gemma-4-E2B-it.litertlm` 未打入 APK，沒有更換 E2B 格式／下載來源。
+- **手機實際安裝、E2B 模型保留、AI 產出內容品質：NOT_RUN**；確認結果前 PR 保持 Draft，絕不將 Kotlin/Rust/APK PASS 冒稱真人效果 PASS。
+- **注意**：本 APK 源自原本正常的 `v0.1.4`，**不包含**尚未驗收的 PP-OCRv6 替換工作；目的是只測 E2B 改造，避免把兩種缺陷混在一起。
