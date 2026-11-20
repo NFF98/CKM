@@ -203,5 +203,5 @@ internal object OcrImagePolicy {
     fun useEnhanced(firstConfidence: Float, secondConfidence: Float,
                     firstEmpty: Boolean, secondNonEmpty: Boolean): Boolean =
         (firstEmpty && secondNonEmpty && secondConfidence > 0.40f) ||
-        (secondConfidence > firstConfidence + 0.08f && secondNonEmpty)
+        (secondConfidence >= 0.45f && secondConfidence > firstConfidence + 0.08f && secondNonEmpty)
 }
