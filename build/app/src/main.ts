@@ -662,8 +662,6 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
     evidenceSummary.textContent = "查看 AI 的理解依據";
     const quote = document.createElement("p");
     quote.textContent = "原文：" + result.evidenceQuote;
-    const hint = document.createElement("p");
-    hint.textContent = "理解：" + (result.contentHint || "未知");
     const uncertain = document.createElement("p");
     uncertain.textContent = "不確定：" + (result.uncertainty || "尚未確認");
     evidenceDetails.append(evidenceSummary, quote, uncertain);
