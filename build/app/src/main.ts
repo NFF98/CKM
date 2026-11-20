@@ -40,10 +40,10 @@ import {
   loadLocalShareReview, recordLocalShareReview,
   type LocalShareField, type LocalShareReview,
 } from "./platform/local-share-review";
+import { ASSET_STEPS, classifyAssetPanel, moveAssetStep, modelPanelLocation, assetStepAvailable, type AssetStep } from "./platform/ui-flow";
 import "./styles.css";
 
 type View = "drop" | "library" | "asset" | "diagnostic";
-type AssetStep = "source" | "understand" | "goal" | "conditions";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 if (!root) throw new Error("找不到 App Root");
@@ -356,7 +356,7 @@ const pageTabs: Record<View, HTMLButtonElement> = {
 const pageSections: Record<View, HTMLElement> = {
   drop: dropView, library: libraryView, asset: assetView, diagnostic: diagnosticView,
 };
-const assetSteps: AssetStep[] = ["source", "understand", "goal", "conditions"];
+const assetSteps: readonly AssetStep[] = ASSET_STEPS;
 let activeAssetStep: AssetStep = "source";
 
 function showTaskFeedback(role: "user" | "running" | "input", message: string): void {
@@ -399,13 +399,12 @@ function applyAssetStep(step: AssetStep = activeAssetStep): void {
   };
   for (const panel of Array.from(preview.children)) {
     if (!(panel instanceof HTMLElement)) continue;
-    const panelStep = panel.classList.contains("asset-source-section") || panel.classList.contains("ocr-panel") ? "source"
-      : panel.classList.contains("model-panel") ? "understand"
-      : panel.classList.contains("goal-panel") ? "goal"
-      : panel.classList.contains("parameter-panel") ? "conditions" : "source";
+    const panelStep = classifyAssetPanel(panel.classList);
     panel.hidden = panelStep !== step;
   }
-  const exists = Boolean(preview.querySelector(panelMap[step].split(", ")[0])) ||
+  const exists = (step === "conditions" && !assetStepAvailable(step,
+      Boolean(preview.querySelector(".parameter-panel")))) ? false :
+    Boolean(preview.querySelector(panelMap[step].split(", ")[0])) ||
     (step === "source" && Boolean(preview.querySelector(".ocr-panel")));
   const empty = get<HTMLElement>("#asset-step-empty");
   empty.hidden = exists;
@@ -453,7 +452,7 @@ function renderModelProvisioning(s: ModelStatus): void {
   const pct = s.totalBytes > 0 ? Math.floor(s.downloadedBytes / s.totalBytes * 100) : 0;
   const deviceSummary = get<HTMLElement>("#device-model-summary");
   const deviceDetails = get<HTMLDetailsElement>("#device-model-details");
-  if (ready) {
+  if (modelPanelLocation(s.installed, s.integrityVerified) === "device") {
     deviceSummary.textContent = "本機 AI：已準備好。更新不需要重新下載 E2B。";
     if (modelSection.parentElement !== deviceDetails) {
       deviceDetails.append(modelSection);
@@ -1550,11 +1549,11 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-asset-s
 }
 get<HTMLButtonElement>("#asset-prev-step").addEventListener("click", () => {
   const index = assetSteps.indexOf(activeAssetStep);
-  if (index > 0) applyAssetStep(assetSteps[index - 1]);
+  if (index > 0) applyAssetStep(moveAssetStep(activeAssetStep, -1));
 });
 get<HTMLButtonElement>("#asset-next-step").addEventListener("click", () => {
   const index = assetSteps.indexOf(activeAssetStep);
-  if (index < assetSteps.length - 1) applyAssetStep(assetSteps[index + 1]);
+  if (index < assetSteps.length - 1) applyAssetStep(moveAssetStep(activeAssetStep, 1));
 });
 checkButton.addEventListener("click", () => { void runBridgeCheck(); });
 textButton.addEventListener("click", () => { void savePrivateText(); });
