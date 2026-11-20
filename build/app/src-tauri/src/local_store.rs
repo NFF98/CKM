@@ -1831,7 +1831,7 @@ mod tests {
     }
 
     #[test]
-    fn us01_no_goal_provenance_cannot_generate_any_private_hypotheses() {
+    fn us01_ambiguous_topics_can_show_unconfirmed_private_hypotheses() {
         let dir=tempfile::tempdir().unwrap();
         let store=LocalStore::open(dir.path()).unwrap();
         let input="時裝設計をパクる　BMW E46 改裝參考";
@@ -1844,8 +1844,10 @@ mod tests {
                   {"domain":"car","goalText":"找汽車技師",
                    "evidenceQuote":"BMW E46"}]}"#,
         )).unwrap();
-        assert!(response.intent_candidate.is_none());
-        assert!(response.intent_candidates.is_empty());
+        assert_eq!(response.intent_candidates.len(), 2,
+            "AI possibilities can be displayed even without explicit user wishes");
+        assert_eq!(response.intent_candidates[1].domain, "car");
+        assert_eq!(response.status, "suggested_private");
         assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
             .load(&asset.id).unwrap().is_none());
     }
