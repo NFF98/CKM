@@ -215,11 +215,11 @@ fn parse_private_model_reply(
     if quote.trim().is_empty() || !original.contains(&quote) {
         return Err(store_error("MODEL_EVIDENCE_MISMATCH"));
     }
-    // A model guess is never an authorization. Even a valid proposal is withheld when
-    // the source does not explicitly express a personal wish to collaborate.
-    let can_suggest = explicit_collaboration_intent(original)
-        && original.chars().count() <= 500
-        && original.len() <= 2048;
+    // Content -> hypotheses -> human confirmation are distinct.
+    // Any topic, even "JLPT", may yield visible PRIVATE hypotheses. These
+    // cannot create a confirmed Goal, share consent, or a public match.
+    // Still reject fabricated evidence, unsupported fields and stale sources.
+    let can_suggest = !original.trim().is_empty();
     // US-01: up to three PRIVATE hypotheses, never guaranteed user Intent.
     // Reject evidence tampering and fabricated/unapproved fields. Maintain the
     // legacy single-candidate model contract for existing installed Android versions.
@@ -253,8 +253,10 @@ fn parse_private_model_reply(
             }
             if candidates.len()==3 {break;}
         }
-        if candidates.is_empty() {
-            // Fallback is ONLY copied user source, NOT an AI interpretation.
+        if candidates.is_empty() && explicit_collaboration_intent(original)
+            && original.chars().count() <= 500 && original.len() <= 2048 {
+            // For an explicit personal collaboration request, keep the old
+            // source-only fallback; never invent it for an isolated topic.
             candidates.push(PrivateIntentCandidate {
                 domain:"unknown".into(),
                 goal_text:original.trim().to_owned(),
@@ -1473,10 +1475,36 @@ mod tests {
                 "intentCandidate":{{"domain":"study","goalText":"想找真人學伴",
                 "evidenceQuote":"{}"}}}}"#, source, source);
             let saved = store.save_model_suggestion(&asset.id, source, model_reply(&reply)).unwrap();
-            assert!(saved.intent_candidate.is_none(), "ambiguous source: {source}");
+            assert_eq!(saved.intent_candidate.as_ref().unwrap().evidence_quote, source,
+                "AI hypotheses remain displayable for ambiguous topics: {source}");
+            assert_eq!(saved.status, "suggested_private");
             assert!(crate::goal_draft::GoalStore::open(dir.path())
                 .unwrap().load(&asset.id).unwrap().is_none());
         }
+    }
+
+    #[test]
+    fn us01_e2b_jlpt_three_private_hypotheses_visible_without_explicit_wish() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let asset = store.save(text_drop("JLPT")).unwrap();
+        let response = model_reply(r#"{"contentHint":"日語能力測驗",
+            "intentCandidates":[
+                {"domain":"study","goalText":"了解 JLPT 級別","evidenceQuote":"JLPT"},
+                {"domain":"study","goalText":"準備 JLPT 考試","evidenceQuote":"JLPT"},
+                {"domain":"study","goalText":"找人一起練日文","evidenceQuote":"JLPT"}]}"#);
+        let result = store.save_model_suggestion(&asset.id, "JLPT", response).unwrap();
+        assert_eq!(result.intent_candidates.len(), 3);
+        assert_eq!(result.intent_candidates[0].goal_text, "了解 JLPT 級別");
+        assert_eq!(result.intent_candidates[2].goal_text, "找人一起練日文");
+        assert_eq!(result.status, "suggested_private");
+        assert!(crate::goal_draft::GoalStore::open(dir.path())
+            .unwrap().load(&asset.id).unwrap().is_none(),
+            "AI hypotheses cannot forge Goal confirmation");
+        drop(store);
+        let reopened = LocalStore::open(dir.path()).unwrap();
+        assert_eq!(reopened.load_model_suggestion(&asset.id).unwrap()
+            .unwrap().intent_candidates.len(), 3);
     }
 
     #[test]
@@ -1648,7 +1676,8 @@ mod tests {
             model_reply(r#"{"contentHint":"服裝設計語境",
                 "intentCandidate":{"domain":"study","goalText":"找學伴",
                 "evidenceQuote":"パクる"}}"#)).unwrap();
-        assert!(next.intent_candidate.is_none(),"context without user wish cannot become Goal");
+        assert_eq!(next.intent_candidate.as_ref().unwrap().goal_text, "找學伴",
+            "private hypothesis may display even when context is ambiguous");
         assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
             .load(&image.id).unwrap().is_none());
     }
