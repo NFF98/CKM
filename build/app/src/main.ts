@@ -41,6 +41,7 @@ import {
   type LocalShareField, type LocalShareReview,
 } from "./platform/local-share-review";
 import { ASSET_STEPS, classifyAssetPanel, moveAssetStep, modelPanelLocation, assetStepAvailable, type AssetStep } from "./platform/ui-flow";
+import { suggestLocalNextActions } from "./platform/local-next-actions";
 import "./styles.css";
 
 type View = "drop" | "library" | "asset" | "diagnostic";
@@ -544,7 +545,7 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
   panel.className = "model-panel";
   panel.setAttribute("aria-label", "私人 Gemma 內容理解與意圖候選");
   const heading = document.createElement("h3");
-  heading.textContent = "Gemma 私人理解與可能意圖";
+  heading.textContent = "E2B 本機理解（選用）";
   const state = document.createElement("p");
   state.className = "status";
   state.setAttribute("role", "status");
@@ -557,10 +558,99 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
   button.textContent = "用手機 Gemma 理解這筆內容";
   const note = document.createElement("p");
   note.className = "fineprint";
-  note.textContent = "只依保存的文字或 OCR 推論；不明確就不猜 Goal。任何建議都需本人修改、確認，且不代表分享同意。";
-  panel.append(heading, state, output, button, note);
+  note.textContent = "下方推薦是手機內的行動選項，不等於 AI 確認你的意圖；目標仍需本人確認。";
+  const choicesTitle = document.createElement("h3");
+  choicesTitle.textContent = "現在可以做什麼？";
+  const choicesPanel = document.createElement("div");
+  choicesPanel.className = "next-actions";
+  const actionResult = document.createElement("p");
+  actionResult.className = "status";
+  actionResult.hidden = true;
+  const aiDetails = document.createElement("details");
+  aiDetails.className = "advanced-details";
+  const aiSummary = document.createElement("summary");
+  aiSummary.textContent = "再請 E2B 分析（選用）";
+  aiDetails.append(aiSummary, button, state, output);
+  panel.append(choicesTitle, choicesPanel, actionResult, aiDetails, note);
   preview.append(panel);
   applyAssetStep();
+
+  // Actions are available without a model call, even for the single word JLPT.
+  try {
+    const asset = await loadDrop(rust, assetId);
+    let text = asset.summary.kind === "image" ? "" : (asset.text || "");
+    if (asset.summary.kind === "image") {
+      const ocr = await loadOcr(rust, assetId);
+      text = ocr.correctedText || ocr.rawText || "";
+    }
+    if (selectedAssetId !== assetId || !panel.isConnected) return;
+    const choices = suggestLocalNextActions(text);
+    if (!choices.length) {
+      const help = document.createElement("p");
+      help.textContent = "先回到「1 內容」辨識或修正文字，再提供相關建議。";
+      choicesPanel.append(help);
+    }
+    for (const action of choices) {
+      const card = document.createElement("div");
+      card.className = "next-action-card";
+      const title = document.createElement("strong");
+      title.textContent = action.title;
+      const detail = document.createElement("p");
+      detail.textContent = action.description;
+      const run = document.createElement("button");
+      run.className = "secondary";
+      run.type = "button";
+      run.textContent = action.kind === "draft" ? "填入我的目標" :
+        action.kind === "save" ? "儲存到收藏" : "查看";
+      card.append(title, detail, run);
+      choicesPanel.append(card);
+      run.addEventListener("click", () => {
+        if (selectedAssetId !== assetId) return;
+        if (action.kind === "draft") {
+          const input = preview.querySelector<HTMLTextAreaElement>('textarea[data-goal-input="true"]');
+          if (!input) {
+            actionResult.textContent = "目標編輯欄尚未準備好，請重開這筆收藏。";
+            actionResult.hidden = false;
+            return;
+          }
+          input.value = action.content;
+          applyAssetStep("goal");
+          input.focus();
+          showTaskFeedback("input", "需要輸入：修改並確認你自己的目標");
+          return;
+        }
+        actionResult.hidden = false;
+        if (action.kind === "explain") {
+          actionResult.textContent = action.content;
+          return;
+        }
+        run.disabled = true;
+        actionResult.textContent = "系統執行：正在儲存私人學習卡…";
+        showTaskFeedback("running", "系統執行：正在儲存私人學習卡");
+        void (async () => {
+          try {
+            await saveText(rust, action.content);
+            if (selectedAssetId === assetId && panel.isConnected) {
+              actionResult.textContent = "學習卡已存入手機收藏，可從收藏頁開啟。";
+              showTaskFeedback("user", "你操作：已儲存學習卡，可繼續");
+              await refreshDrops();
+            }
+          } catch (error) {
+            if (selectedAssetId === assetId && panel.isConnected) {
+              actionResult.textContent = errorMessage(error);
+              run.disabled = false;
+              showTaskFeedback("input", "需要輸入：確認後重試儲存");
+            }
+          }
+        })();
+      });
+    }
+  } catch (error) {
+    if (selectedAssetId === assetId && panel.isConnected) {
+      actionResult.hidden = false;
+      actionResult.textContent = errorMessage(error);
+    }
+  }
 
   function showSuggestion(result: ModelSuggestion): void {
     output.replaceChildren();
@@ -614,7 +704,7 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
       }
     } else {
       const unknown = document.createElement("p");
-      unknown.textContent = "UNKNOWN：無足夠證據推測你的合作目標。可以只收藏、回答一個必要問題，或自行說明。";
+      unknown.textContent = "E2B 無法從原文證明你想找人合作；上方仍有可執行的下一步供你選擇。";
       output.append(unknown);
     }
     // A model-suggested question never becomes a confirmed intent or approved Concept.
@@ -1454,7 +1544,7 @@ async function savePrivateText(): Promise<void> {
       ? "私人文字已保存；系統偵測到相同內容曾收藏，兩筆都保留。"
       : "私人文字已保存到手機。";
     await refreshDrops();
-    await openAsset(saved.id, true);
+    await openAsset(saved.id, false);
   } catch (error) {
     saveStatus.textContent = errorMessage(error);
     showTaskFeedback("input", "需要輸入：請確認內容，然後重新儲存");
