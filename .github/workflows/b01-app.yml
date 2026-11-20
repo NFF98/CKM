@@ -34,6 +34,12 @@ jobs:
         run: npm test
       - name: Vite build
         run: npm run build
+      - name: Save web GUI preview for mobile viewport smoke checks
+        uses: actions/upload-artifact@v4
+        with:
+          name: cakami-mobile-gui-preview
+          path: build/app/dist/**
+          if-no-files-found: error
 
   rust:
     name: B01 Rust tests
