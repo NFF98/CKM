@@ -861,7 +861,8 @@ async function renderOcrEditor(assetId: string): Promise<void> {
     if (selectedAssetId !== assetId) return;
     run.disabled = true;
     save.disabled = true;
-    state.textContent = "正在保存人工修正到手機 SQLite…";
+    state.textContent = "正在保存人工修正到手機…";
+    showTaskFeedback("running", "系統執行：正在保存你修正的文字");
     void (async () => {
       try {
         const result = await correctOcr(rust, assetId, correction.value);
@@ -1443,6 +1444,7 @@ async function openAsset(id: string, autoAnalyze = false): Promise<void> {
 async function savePrivateText(): Promise<void> {
   if (saving) return;
   updateBusy(true);
+  showTaskFeedback("running", "系統執行：正在保存私人文字");
   saveStatus.textContent = "正在保存私人文字…";
   try {
     assertNative();
@@ -1493,6 +1495,7 @@ async function decodeImage(file: File): Promise<string> {
 async function savePrivateImage(file: File, source: ImageSource): Promise<void> {
   if (saving) return;
   updateBusy(true);
+  showTaskFeedback("running", "系統執行：正在檢查並保存圖片");
   saveStatus.textContent = "正在檢查圖片與保存私人原圖…";
   try {
     assertNative();
@@ -1609,7 +1612,8 @@ parameterCommit.addEventListener("click", () => {
   parameterConfirmBusy = true;
   parameterCancel.disabled = true;
   parameterCommit.disabled = true;
-  parameterConfirmStatus.textContent = "Rust 正在建立本人確認事件，仍不會分享或發布…";
+  parameterConfirmStatus.textContent = "系統正在保存你確認的條件…";
+  showTaskFeedback("running", "系統執行：正在保存你確認的條件");
   void (async () => {
     try {
       assertNative();
@@ -1639,7 +1643,8 @@ goalCommit.addEventListener("click", () => {
   goalConfirmBusy = true;
   goalCommit.disabled = true;
   goalCancel.disabled = true;
-  goalConfirmStatus.textContent = "正在由 Rust 建立本人確認事件與私人 Goal 草稿…";
+  goalConfirmStatus.textContent = "系統正在保存你確認的目標…";
+  showTaskFeedback("running", "系統執行：正在保存你確認的目標");
   void (async () => {
     try {
       assertNative();
