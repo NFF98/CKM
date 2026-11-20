@@ -248,3 +248,13 @@
 - **安全界線**：內容理解 ≠ 本人真實目的。E2B 不得自動建立 CONFIRMED Goal、修改正式 Registry、取得 Cloud Consent 或傳送原圖／私人筆記。所有私人資料留在裝置。先使用已下載 E2B，**不要藉品質問題默默改用雲端模型或強迫下載另一個大模型**。
 - **驗收提案（尚待產品回報確認）**：建立 10 個跨「單字、圖片+OCR、直述想合作、多義/未知、非日文情境」的可重播測項；每一筆能顯示簡明的「我理解了什麼／不確定什麼／你可以做什麼」，每個可點按動作都需要持久化或明確導航；不得捏造意圖，手機離線可用。以真機使用者對輸出「有沒有幫助」的評分決定是否需替換模型。
 - **目前狀態**：根因架構審核已完成；尚未修改程式／重出 APK，待下一個實作切片。這次不能宣稱品質已修復。
+
+## US01-JLPT-01 / US01-OCR-02｜2026-11-21 同簽章 v0.1.4 補救交付
+
+- **新真機報告**：使用者輸入 `JLPT`，E2B 完全沒有提供可用建議；日本語 OCR 只有使用者估計約 **40%** 準確率。兩項均為真機使用者 **FAIL**。這與 CI/程式能跑不矛盾，不能將「安裝成功」或「有 OCR 文字」當作產品驗收成功。
+- **JLPT 根因**：本機模型多欄 JSON 提示詞＋Rust `explicit_collaboration_intent` 要求明確第一人稱找人合作，單字 JLPT 被直接阻止輸出私人 Goal。**保留阻止 AI 偽造本人 Goal 的安全檢查**，另建立 `suggestLocalNextActions()`，不依賴 Gemma，會在輸入 JLPT 後立即提供可點的 3 個有實際效果的選項：「看級別」「新增並持久化私人學習卡」「填入但不自動確認找學伴 Goal」。全部只使用本機，E2B 變為可選擇的延伸分析。
+- **OCR 程式缺陷及修正**：原生 ML Kit Japanese `InputImage.fromBitmap(bitmap, 0)` 忽略原相機 EXIF 方向；現在讀取 `ExifInterface.rotationDegrees`。低信心、像素安全且時間足夠的圖片另外跑一次裝置端對比增強；僅當第二結果較可信且 confidence 至少 0.45 才替換，否則保留原結果。原始圖像、OCR 人工修正與模型檔不更動，上傳雲端仍禁用。
+- **OCR 回歸**：先發現 JUnit 依賴未配置，補 `testImplementation("junit:junit:4.13.2")`；再由單元測試抓到低信心替換門檻問題，修復後 [Kotlin OCR/Model compile & unit tests PASS](https://github.com/NFF98/CKM/actions/runs/44818390276)。
+- **前端/Rust**：[CI PASS](https://github.com/NFF98/CKM/actions/runs/44817321437)，`JLPT` 單詞/級別/安全界線的 Vitest 覆蓋。
+- **正式同簽章 Android APK**：[v0.1.4 Build PASS](https://github.com/NFF98/CKM/actions/runs/44818462381)。Android package `com.nff98.ckm.dev`、versionCode `1004`、versionName `0.1.4`，再次使用 CLEAN 固定私鑰重簽，cert SHA256 `a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5`，v2/v3 PASS。交付檔 `CAKAMI-v0.1.4-JLPT-OCR-UPDATE-ARM64.apk` 存放 ChatGPT 對話附件；Sha256 `0f1627378d54905bacca55bdcfb53aaa63c24f383433a1f16ad7aef8e3bb31f3`。正常覆蓋安裝不應清除 App 模型／SQLite，也不需重下載 2.59GB E2B。
+- **唯一尚未通過**：真機「JLPT 三個動作有用」及「同一批日文照片修改前後 OCR 實測字元準確率」仍 **NOT_RUN**。不能宣稱單靠照片方向/對比就已解決 40% 品質；必要時以照片樣本考慮替換本地 OCR 引擎，而不是造假數據。手機一次驗收參見 [US01_JLPT_OCR_014_PHONE_TEST.md](../../test/US01_JLPT_OCR_014_PHONE_TEST.md)。
