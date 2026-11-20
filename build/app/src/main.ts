@@ -1457,6 +1457,7 @@ async function savePrivateText(): Promise<void> {
     await openAsset(saved.id, true);
   } catch (error) {
     saveStatus.textContent = errorMessage(error);
+    showTaskFeedback("input", "需要輸入：請確認內容，然後重新儲存");
   } finally {
     updateBusy(false);
   }
@@ -1508,6 +1509,7 @@ async function savePrivateImage(file: File, source: ImageSource): Promise<void> 
     await openAsset(saved.id);
   } catch (error) {
     saveStatus.textContent = errorMessage(error);
+    showTaskFeedback("input", "需要輸入：請確認內容，然後重新儲存");
   } finally {
     updateBusy(false);
   }
