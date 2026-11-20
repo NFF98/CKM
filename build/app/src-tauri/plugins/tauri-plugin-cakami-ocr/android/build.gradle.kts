@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
 plugins {
     id("com.android.library")
@@ -83,7 +84,7 @@ val preparePaddleModels = tasks.register("preparePaddleModels") {
                     temp.delete()
                 }
             }
-            val sha = java.security.MessageDigest.getInstance("SHA-256")
+            val sha = MessageDigest.getInstance("SHA-256")
             file.inputStream().use { stream ->
                 val buf = ByteArray(128 * 1024)
                 while (true) {
