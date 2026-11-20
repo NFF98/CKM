@@ -219,6 +219,7 @@ const preview = get<HTMLElement>("#drop-preview");
 // Move confirmation dialogs outside hidden page ancestors so they work on any step.
 libraryView.append(get<HTMLElement>(".recent-section"));
 assetView.append(preview);
+assetView.append(get<HTMLElement>(".asset-next-actions"));
 const modelSection = get<HTMLElement>("#model-status").closest<HTMLElement>("section")!;
 if (!modelSection) throw new Error("找不到 Gemma 模型區");
 get<HTMLElement>("#model-onboarding").append(modelSection);
@@ -381,6 +382,7 @@ function setView(view: View): void {
 }
 
 function applyAssetStep(step: AssetStep = activeAssetStep): void {
+  const changed = activeAssetStep !== step;
   activeAssetStep = step;
   const titles: Record<AssetStep, string> = {
     source: "核對內容", understand: "AI 理解", goal: "我的目標", conditions: "私人條件",
@@ -426,6 +428,7 @@ function applyAssetStep(step: AssetStep = activeAssetStep): void {
   next.textContent = ["下一步：AI 理解", "下一步：我的目標", "下一步：私人條件"][index] || "下一步";
   showTaskFeedback(step === "source" || step === "goal" || step === "conditions" ? "input" : "running",
     step === "understand" ? "系統執行：本機 AI 可產生建議" : "需要輸入：" + titles[step]);
+  if (changed && !assetView.hidden) window.scrollTo(0, 0);
 }
 
 function updateBusy(isBusy: boolean): void {
