@@ -559,8 +559,11 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
   const note = document.createElement("p");
   note.className = "fineprint";
   note.textContent = "下方推薦是手機內的行動選項，不等於 AI 確認你的意圖；目標仍需本人確認。";
-  const choicesTitle = document.createElement("h3");
-  choicesTitle.textContent = "其他固定選項（不是 AI 推測）";
+  const fixedOptions = document.createElement("details");
+  fixedOptions.className = "advanced-details";
+  fixedOptions.open = true; // always available before an E2B inference
+  const choicesTitle = document.createElement("summary");
+  choicesTitle.textContent = "不用等 AI：直接可做的事（固定選項）";
   const choicesPanel = document.createElement("div");
   choicesPanel.className = "next-actions";
   const actionResult = document.createElement("p");
@@ -573,7 +576,8 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
   aiLabel.className = "step-guide";
   aiLabel.textContent = "AI 只提出可能性；選擇後還要你確認，不會自動分享。";
   aiResults.append(aiLabel, button, state, output);
-  panel.append(heading, aiResults, choicesTitle, choicesPanel, actionResult, note);
+  fixedOptions.append(choicesTitle, choicesPanel, actionResult);
+  panel.append(heading, aiResults, fixedOptions, note);
   preview.append(panel);
   applyAssetStep();
 
@@ -672,6 +676,9 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
     const candidates = result.intentCandidates.length > 0
       ? result.intentCandidates : result.intentCandidate ? [result.intentCandidate] : [];
     if (candidates.length) {
+      // Avoid showing two competing sets of suggestions after real AI output.
+      // The reliable deterministic actions stay one tap away.
+      fixedOptions.open = false;
       const heading = document.createElement("p");
       heading.textContent = "AI 推測的方向（不是你的已確認意圖）";
       output.append(heading);
@@ -706,6 +713,7 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
         output.append(intent, evidence, adopt);
       }
     } else {
+      fixedOptions.open = true;
       const unknown = document.createElement("p");
       unknown.textContent = "E2B 這次沒有產生可靠候選。可補充內容再試，或使用下方固定選項。";
       output.append(unknown);
