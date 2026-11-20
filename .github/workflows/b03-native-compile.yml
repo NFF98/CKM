@@ -72,3 +72,7 @@ jobs:
         working-directory: build/app/src-tauri/gen/android
         run: |
           ./gradlew :tauri-plugin-cakami-model:testDebugUnitTest --no-daemon --stacktrace
+      - name: OCR 低信心重試 Kotlin 單元測試（不打包 APK）
+        working-directory: build/app/src-tauri/gen/android
+        run: |
+          ./gradlew :tauri-plugin-cakami-ocr:testDebugUnitTest --no-daemon --stacktrace
