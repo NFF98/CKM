@@ -1297,6 +1297,21 @@ mod tests {
     }
 
     #[test]
+    fn b03_paddle_v6_replaces_mlkit_without_migrating_private_photos() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(png_drop(&tiny_png())).unwrap();
+        let mut updated = recognized_ocr("日本語能力試験 JLPT N2");
+        updated.engine = "paddle_ocrv6_small_onnx".into();
+        updated.engine_version = "6.0.0".into();
+        let ocr = store.save_recognition(&saved.id, updated).unwrap();
+        assert_eq!(ocr.raw_text.as_deref(), Some("日本語能力試験 JLPT N2"));
+        assert_eq!(ocr.engine.as_deref(), Some("paddle_ocrv6_small_onnx"));
+        assert_eq!(ocr.engine_version.as_deref(), Some("6.0.0"));
+        assert_eq!(store.load(&saved.id).unwrap().summary.id, saved.id);
+    }
+
+    #[test]
     fn b03_unknown_is_not_faked_and_manual_correction_stays_independent() {
         let dir = tempfile::tempdir().unwrap();
         let store = LocalStore::open(dir.path()).unwrap();
