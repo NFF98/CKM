@@ -304,3 +304,24 @@ textarea {
 .next-action-card p { font-size: 13px; color: #4f6660; margin: 5px 0 9px; }
 .next-action-card .secondary { min-height: 42px; margin: 0; background: #fff; }
 .model-panel .next-action-result { white-space: pre-wrap; }
+
+
+/* E2B's actual interpretation is a primary, visible result—not a hidden
+   advanced action. Separate it from reliable locally curated fallback. */
+.e2b-main-results {
+  padding: 12px;
+  border-radius: 12px;
+  background: #edf5ff;
+  border: 1px solid #a9cce9;
+  margin: 10px 0 14px;
+}
+.e2b-main-results > .primary { width: 100%; min-height: 48px; margin: 6px 0; }
+.e2b-main-results .ai-understood {
+  padding: 10px 12px;
+  color: #174a72;
+  background: #fff;
+  border-radius: 9px;
+  font-weight: 700;
+}
+.e2b-main-results .model-output > p { margin: 10px 0; }
+.e2b-main-results .model-output > button { width: 100%; }
