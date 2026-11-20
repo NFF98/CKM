@@ -219,7 +219,7 @@ const preview = get<HTMLElement>("#drop-preview");
 // Move confirmation dialogs outside hidden page ancestors so they work on any step.
 libraryView.append(get<HTMLElement>(".recent-section"));
 assetView.append(preview);
-const modelSection = get<HTMLElement>("#model-status").closest<HTMLElement>("section");
+const modelSection = get<HTMLElement>("#model-status").closest<HTMLElement>("section")!;
 if (!modelSection) throw new Error("找不到 Gemma 模型區");
 get<HTMLElement>("#model-onboarding").append(modelSection);
 for (const dialogId of ["#parameter-dialog", "#goal-dialog", "#delete-dialog"]) {
