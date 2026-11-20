@@ -2,6 +2,43 @@
 
 > GitHub 追蹤用，不是新 Governance Gate。**只有具備真實 Evidence 才可標 PASS**；上層依據 [Build Bible](../BACKLOG.md)／[Spec Traceability](../TRACEABILITY.md)／[Sprint 1 AC](SPRINT-01_LOCAL_AI.md)。
 
+## 2026-11-19｜本輪補齊手機可測的 US-01C／D（PR #17）
+
+**新增真實 Coding（非只改文件）：**
+- **US-01C / B05：** 已確認 Goal 包含 N2／JLPT N2／日語二級時，畫面提供「採用 Goal 裡的 N2 條件候選」；只會保存 `OBSERVED` 私人候選，**第二次本人確認**才加入 B06 slot。Fashion／Car／`パクる` 等沒有 N2 證據時不自動出現；有新 TS regression。
+- **US-01C / B06：** 抽出獨立 atomic slot 配置判斷，新增合成 **8 個已占→第 9 個拒絕、原本 8 個不被踢掉、空位重用** Rust 測試。**不是**虛構 8 個正式批准的 Registry 類別；完整 T-01 白名單仍 OPEN，真實 8 種合法概念的 E2E 保持 BLOCKED。
+- **US-01D / B08：** 新增 Rust SQLite `local_share_preview_approvals` / `local_share_preview_events`、使用者逐項選擇「Goal 全文／已確認 N2」及明確二次操作、版本化、快照綁定、撤回、來源刪除級聯。來源 Goal／條件／生命週期改變時舊紀錄失效。新增 TS strict contract、Rust 威脅／負例測試，以及 Android UI 操作；**全部本地，`canUpload=false`**。這是本地逐項審核而非 Sprint 2 的正式 Cloud Consent，未核准欄位、私密 OCR/圖片/補問答案不能拿去公開。
+- **本輪不新增** Cloud 連接、任意公開欄位、假真人或假的跨域視覺理解；先讓使用者測試真 Android APK。
+
+**工程測試**：此段程式曾有 TypeScript unknown 型別與 Rust moved value 編譯錯誤，均已修復。最終程式及 APK 的 CI 以 PR #17 最新 Head run／GitHub Actions 為準；不可將此段 Coding 自動寫為 Android 真機 PASS。
+
+**剩餘 Release Gate**：用最新 APK 真機驗證「文字／圖片 OCR→私人建議→補問→本人確認→已核准條件→8-slot→逐項本地審核→撤回／期限／離線」；T-01 八種正式概念仍需 Registry Decisions，未核准前不能以測試假白名單發布。
+
+## 2026-11-19｜US-01B／C／D 後續實際 Coding（PR #17，全部仍待 Android 真機 E2E）
+
+**Stack：** [PR #15](https://github.com/NFF98/CKM/pull/15) → [PR #16](https://github.com/NFF98/CKM/pull/16) → **[PR #17](https://github.com/NFF98/CKM/pull/17)**（`feat/us01b-us01c-local-flow`，Draft；**不是 main 合併或 APK 已發布**）。本段為 2026-11-19 新開發紀錄；下方先前 NOT_STARTED 表格是當時歷史狀態。
+
+| Slice | 真正提交的程式與跨模組測試 | 工程 CI／真機驗收 |
+|---|---|---|
+| **US-01A** | 沿用 PR #16 的 B02→B03→B04 私人候選／本人確認。Rust／SQLite／TS 原本 CI PASS。 | **Android E2E NOT_RUN**；不宣稱初次候選命中率，PR #17 新增最多三個有原文證據的私人 `intentCandidates`，舊單一候選 SQLite JSON 可向後相容；仍未有真機準確率。 |
+| **US-01B** | `main.ts` 將 OCR／更正後的有效文字送入原本 `local_model_propose`，不建立圖片專用 AI；Rust 整合測試驗證 OCR→模型候選→B04 本人確認、來源更正後舊候選失效、無文字為 `vision_unknown`。 | 新版 GitHub CI 見 PR #17 Checks，真機 **NOT_RUN**。**Gemma 沒有圖片像素輸入，不能說看到圖就理解圖像本身**。 |
+| **US-01C／B05+B06** | 實際 SQLite `local_matching_slots`，0–7 容量、`UNIQUE(draft_id,slot_index)`、`UNIQUE(draft_id,concept_id)`、來源／確認事件／版本 Admission Trigger，B05 人工確認同交易分配 slot；修改 Goal／Parameter 或撤銷讓舊 slot 失效；TypeScript 嚴格驗證 `matchSlotIndex`。 | SQLite 直接 SQL 偽造／slot 8、來源刪除連動測試已提交。**T01 完整 Approved Registry 白名單未核准，現僅 N2 一種合法概念；8 種＋第 9 種不同合法概念的實際邊界測試 BLOCKED，不能用偽造 8 種類別代替。** |
+| **US-01C／B09** | 本地模型可回單一可空 `clarifyingQuestion`；Rust 只記住來源 hash 對應的真人回答，SQLite 最多 2 題（含去重與同一時間一題），另保留 B04 本人 Goal 確認為第 3 步。回答後回到同一 Gemma 引擎重新推論；UNKNOWN／不必問時可 0 題。 | Rust／SQLite quota、重試、人工回答非模型證據、來源更正失效＋TypeScript Contract 已提交；**Android 問題是否真的有用、Gemma 能否穩定輸出題目：NOT_RUN**。不是固定 8 個問題。 |
+| **US-01D／B07+B08 local** | Rust／SQLite 私人期限（真完整日期）、撤銷、版本與確認事件、重啟持久化，並與 B06 Slot 聯動；UI 增加本人操作和只讀 Share Preview，明確 `consentRecorded=false`／`canUpload=false`，排除圖片／OCR／私人筆記／追問答案。 | 跨模組 Rust／SQLite 期限／撤銷／B06 Slot 清理／預覽＋TS 測試已提交；**Android 與網路封包 E2E NOT_RUN**。**B08 真實逐項 Consent 與 Cloud 發布不在此宣稱已實作**；T01 與 Cloud Payload 定案前只允許本地 Preview。 |
+
+**PR #17 的實際 CI Evidence（核對 2026-11-19 GitHub Actions Logs）：**
+- [B01 TypeScript／Rust Run #44450590257](https://github.com/NFF98/CKM/actions/runs/44450590257) **PASS**：TypeScript **6 個測試檔／60 個測試 PASS**；Rust **80 個測試 PASS**，0 failed；TypeScript typecheck 與 Vite Build PASS（`c33daa59`，僅 docs 差異於程式頭 `201be725`）。
+- [Harness Run #44450590265](https://github.com/NFF98/CKM/actions/runs/44450590265) **PASS**。
+- [Android Kotlin compile-only Run #44450436567](https://github.com/NFF98/CKM/actions/runs/44450436567) **PASS**（`201be725`，目前最新版 Kotlin 程式與 TS/Rust）；不含安裝／Gemma 實機推論。
+- [新版 Android ARM64 Debug APK 批次 Run #44450760331](https://github.com/NFF98/CKM/actions/runs/44450760331)：已依 `apk-batch-ready` 啟動，**建置結果待最終 GitHub workflow**；沒有裝置安裝或 E2E 證據。更新同 App ID 如發生簽章衝突，**禁止直接解除安裝或清除資料**，避免丟失已下載的 Gemma 權重與私人 SQLite。
+- 這些 **Coding CI PASS 並非 US-01 Android E2E PASS**；此頁面仍以完整真人 Android 測試為 User Story Release Gate。
+
+**安全界線：** 現在不呼叫 Supabase、不執行 Cloud AI、不聲稱找到真人。完全依照 SSOT 將 8 slots 視為合法匹配概念上限，而非 8 項固定表單；追問不會自動轉成已批准的 `Need`／`Offer`／時間欄位。
+
+**最後驗收狀態：** `US-01 = NG／NOT_RUN`（產品真機）。PR #17 的 GitHub Harness、TS/Rust CI、Kotlin compile-only 是工程 Gate；任何未通過的檢查必須修復並記錄最後 SHA。**尚無 US-01A～D 新版 Android APK 或實體 E2E PASS，不可蓋掉 2026-11-19 使用者報告的前版 NG。**
+
+**接續阻斷：** (1) PR #17 所有最新 Checks PASS；(2) T-01 完整 8+1 核准類別測試，需正式 Registry Decisions；(3) Android 批次 APK 用現有模型做文字、OCR、UNKNOWN、雙追問、本人確認、期限／撤銷、飛航模式；(4) 真機錯誤及模型能力用 log 記錄。**除非全部通過，不改 Sprint 1 狀態為 PASS。**
+
 ## 2026-11-19｜US-01A Coding 續作（PR #16；尚非真機 PASS）
 
 **PR：** [US-01A 本地意圖候選 Coding #16](https://github.com/NFF98/CKM/pull/16)，疊在 [User Story Sprint #15](https://github.com/NFF98/CKM/pull/15) 之上；保留 B01～B05 既有程式，不開始第二套架構。
@@ -190,3 +227,34 @@
 - **狀態**：B03、B04 原始 Coding 實作存在；B03→B04 **產品價值整合／Action Intelligence E2E = FAIL／NG（待修復）**，不得宣稱已完成或進入 B06 取代此缺口。B05 Concept Registry Coding／CI 既有 PASS 不變，但正式真機驗收仍未全部完成。
 - **修復方向（先設計／測試，再進 Coding）**：區分「客觀原文／詞義／內容類別」→「模型建議的下一步私人候選」→「本人選擇動作」→「實際執行並保存」。對 `パクる` 可以提出**複習、練用法、找學伴、只收藏**等動作選擇，**不能把 AI 猜測當作本人 Goal、Consent、CONFIRMED 或公開分享**。單一詞義不能可靠推定使用者真意，應給少量有用選擇而非造假自動 Goal。
 - **要求的下一次真機測試**：Drop `パクる`，不用再打字即可看到至少一個明確、相關且可執行的下一步；使用者點選後 App **真的完成**（如建立本地複習項或引導經本人確認的私人 Goal），重新開啟仍保留必要結果；只收藏／取消不建立 Goal。離線可用、無雲端 AI、無自動公開。**當前 NG，下一版尚未修復。**
+
+## 使用者四項手機 GUI 問題：分頁／色碼／E2B 首次顯示／重複按鈕（2026-11-20）
+
+- **使用者實測 UX FAIL**：單頁過長、功能重複、圖片／Goal／Intent 辨識不清；需分別顯示本人操作、系統執行、需要輸入，且 E2B 準備完後從首頁撤下。
+- **本輪修正**：[PR #17](https://github.com/NFF98/CKM/pull/17) 以原有 Rust/SQLite Command 保留資料與狀態機，純 UI 改為四個明確頁面 **新增／收藏／處理內容／裝置**；內容細分為 **1 原文及 OCR／2 本地 AI 理解／3 本人 Goal／4 私人條件**。有上一頁、下一步、頁籤、返回收藏與持久化重新開啟。
+- **三色語義及文字同步**：綠 = 本人操作、藍 = 系統執行中、橘 = 待使用者輸入；另有操作狀態的即時文字，不能只依顏色判斷。
+- **E2B 模型**：首次未安裝才在新增頁顯示下載卡，已經驗證的模型會將原卡移到「裝置 → 查看本機 AI 詳細狀態」的隱藏折疊區；保留 `files/models/`，沿用 Android 0.1.1 裡的 `ModelReusePolicy`，不應因 UI／同簽章升級重新下載 2.59 GB。
+- **重複與長文**：原圖/OCR、Gemma 可能目標、Goal 本人確認、條件確認各在獨立步驟；「只收藏」不再是無實際效果的冗餘按鈕，改為返回收藏；期限／撤銷／本地預覽及本地分享審核歸入進階折疊，不修改原本的 DB、隱私限制、對話框確認或伪造拒絕邏輯。
+- **UI 自動測試**：Vitest 新增 `ui-flow.test.ts`，測試順序、內容歸類、上一頁下一步、已驗證 E2B 自動收起、條件必須有 Goal。原 TypeScript／Vitest／Rust CI [PASS](https://github.com/NFF98/CKM/actions/runs/44666375969)；原生 Kotlin 編譯／測試 [PASS](https://github.com/NFF98/CKM/actions/runs/44666375972)。
+- **使用者固定簽章更新 APK**：`CAKAMI-v0.1.2-UI-UPDATE-ARM64.apk`，SHA256 `e4eac8205070fa5ef7e9e3720904e1c9ff5ba40e8f6cfd4d73f205f0a7f4074d`，Android app ID `com.nff98.ckm.dev`、versionCode `1002`、versionName `0.1.2`，以與 CLEAN 0.1.1 完全相同 cert `a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5` 離線固定簽章。編譯及驗證 [PASS](https://github.com/NFF98/CKM/actions/runs/44666652984)，真機 E2B 保留／GUI 仍 **NOT_RUN**。
+- **未更動範圍**：11/19 使用者反映的 B03→B04 Action Intelligence 價值整合／能否提出有用下一步 **仍為 NG，這次僅調整 GUI，不能冒稱修好該缺口**。
+- [一輪真機測試步驟](../../test/US01_GUI_012_PHONE_TEST.md)。
+
+## E2B 真機效果差：模型品質與 Action Intelligence NG（2026-11-21）
+
+- **使用者 2026-11-21 真機評價：「E2B 效果超級爛」**。這是使用者可用性 / AI 答案品質 **FAIL**，不得以 APK Build PASS、模型下載完成或 JSON 可解析冒稱 B03 / B04 產品效果 PASS。使用者尚未提供新的失敗樣本，因此答錯、太慢、日文詞義錯或缺乏可執行下一步，不能在本輪擅自判定單一原因。
+- **已查出確定的產品設計抑制因子**：`CakamiModelPlugin.kt` 的超長多欄 JSON prompt 強制有原文第一人稱找真人合作才能建 Goal；`local_store.rs::explicit_collaboration_intent` 在 Rust 端又採用 `wants && together` 門檻。單字／照片內容在當前 UX 至多能有詞義＋UNKNOWN/補問，**沒有可以立即採用的實際下一步**。此為已確認的 B03→B04 Action Intelligence 缺口，不代表單靠放寬 Goal 門檻就能安全自動生成使用者意圖。
+- **修正方向（不換模型、不重下載 2.59 GB）**：把 Gemma E2B 職責縮至簡短、可核對的內容理解與不確定性，不再要求它同時做好多候選 JSON + 追問 + Goal 判定；由裝置內確定性知識卡／原生動作層提供 2–3 個和內容相關的**可選擇**「下一步」（只收藏、看日文詞義／例句、建立本地練習、輸入自己的 Goal 等，依來源型別決定）；按下後真的在 SQLite 完成並可重開驗證，或明確提示尚不支援，絕不呈現無作用的假按鈕。
+- **安全界線**：內容理解 ≠ 本人真實目的。E2B 不得自動建立 CONFIRMED Goal、修改正式 Registry、取得 Cloud Consent 或傳送原圖／私人筆記。所有私人資料留在裝置。先使用已下載 E2B，**不要藉品質問題默默改用雲端模型或強迫下載另一個大模型**。
+- **驗收提案（尚待產品回報確認）**：建立 10 個跨「單字、圖片+OCR、直述想合作、多義/未知、非日文情境」的可重播測項；每一筆能顯示簡明的「我理解了什麼／不確定什麼／你可以做什麼」，每個可點按動作都需要持久化或明確導航；不得捏造意圖，手機離線可用。以真機使用者對輸出「有沒有幫助」的評分決定是否需替換模型。
+- **目前狀態**：根因架構審核已完成；尚未修改程式／重出 APK，待下一個實作切片。這次不能宣稱品質已修復。
+
+## US01-JLPT-01 / US01-OCR-02｜2026-11-21 同簽章 v0.1.4 補救交付
+
+- **新真機報告**：使用者輸入 `JLPT`，E2B 完全沒有提供可用建議；日本語 OCR 只有使用者估計約 **40%** 準確率。兩項均為真機使用者 **FAIL**。這與 CI/程式能跑不矛盾，不能將「安裝成功」或「有 OCR 文字」當作產品驗收成功。
+- **JLPT 根因**：本機模型多欄 JSON 提示詞＋Rust `explicit_collaboration_intent` 要求明確第一人稱找人合作，單字 JLPT 被直接阻止輸出私人 Goal。**保留阻止 AI 偽造本人 Goal 的安全檢查**，另建立 `suggestLocalNextActions()`，不依賴 Gemma，會在輸入 JLPT 後立即提供可點的 3 個有實際效果的選項：「看級別」「新增並持久化私人學習卡」「填入但不自動確認找學伴 Goal」。全部只使用本機，E2B 變為可選擇的延伸分析。
+- **OCR 程式缺陷及修正**：原生 ML Kit Japanese `InputImage.fromBitmap(bitmap, 0)` 忽略原相機 EXIF 方向；現在讀取 `ExifInterface.rotationDegrees`。低信心、像素安全且時間足夠的圖片另外跑一次裝置端對比增強；僅當第二結果較可信且 confidence 至少 0.45 才替換，否則保留原結果。原始圖像、OCR 人工修正與模型檔不更動，上傳雲端仍禁用。
+- **OCR 回歸**：先發現 JUnit 依賴未配置，補 `testImplementation("junit:junit:4.13.2")`；再由單元測試抓到低信心替換門檻問題，修復後 [Kotlin OCR/Model compile & unit tests PASS](https://github.com/NFF98/CKM/actions/runs/44818390276)。
+- **前端/Rust**：[CI PASS](https://github.com/NFF98/CKM/actions/runs/44817321437)，`JLPT` 單詞/級別/安全界線的 Vitest 覆蓋。
+- **正式同簽章 Android APK**：[v0.1.4 Build PASS](https://github.com/NFF98/CKM/actions/runs/44818462381)。Android package `com.nff98.ckm.dev`、versionCode `1004`、versionName `0.1.4`，再次使用 CLEAN 固定私鑰重簽，cert SHA256 `a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5`，v2/v3 PASS。交付檔 `CAKAMI-v0.1.4-JLPT-OCR-UPDATE-ARM64.apk` 存放 ChatGPT 對話附件；Sha256 `0f1627378d54905bacca55bdcfb53aaa63c24f383433a1f16ad7aef8e3bb31f3`。正常覆蓋安裝不應清除 App 模型／SQLite，也不需重下載 2.59GB E2B。
+- **唯一尚未通過**：真機「JLPT 三個動作有用」及「同一批日文照片修改前後 OCR 實測字元準確率」仍 **NOT_RUN**。不能宣稱單靠照片方向/對比就已解決 40% 品質；必要時以照片樣本考慮替換本地 OCR 引擎，而不是造假數據。手機一次驗收參見 [US01_JLPT_OCR_014_PHONE_TEST.md](../../test/US01_JLPT_OCR_014_PHONE_TEST.md)。

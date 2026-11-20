@@ -71,6 +71,14 @@ pub struct OcrRecord {
     pub updated_at_ms: Option<i64>,
 }
 
+/// B09: only a private, evidence-versioned question, not a Goal or matching Concept.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingIntentQuestion {
+    pub ordinal: i64,
+    pub text: String,
+}
+
 /// US-01A: an unconfirmed, private suggestion. It is neither a Goal event nor Consent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -89,6 +97,8 @@ pub struct ModelSuggestion {
     pub content_hint: Option<String>,
     pub uncertainty: Option<String>,
     pub intent_candidate: Option<PrivateIntentCandidate>,
+    pub intent_candidates: Vec<PrivateIntentCandidate>,
+    pub pending_question: Option<PendingIntentQuestion>,
     pub model_id: String,
     pub runtime: String,
     pub backend: String,
@@ -104,6 +114,10 @@ struct RawSuggestion {
     content_hint: Option<String>,
     uncertainty: Option<String>,
     intent_candidate: Option<PrivateIntentCandidate>,
+    #[serde(default)]
+    intent_candidates: Option<Vec<PrivateIntentCandidate>>,
+    #[serde(default)]
+    clarifying_question: Option<String>,
 }
 
 /// Rust deliberately requires first-person collaborative intent evidence before offering
@@ -132,7 +146,7 @@ fn source_quote(source: &str) -> String {
 fn parse_private_model_reply(
     original: &str,
     reply: &str,
-) -> Result<(String, Option<String>, Option<String>, Option<PrivateIntentCandidate>), String> {
+) -> Result<(String, Option<String>, Option<String>, Option<PrivateIntentCandidate>, Option<String>, Vec<PrivateIntentCandidate>), String> {
     let text = reply.trim().trim_start_matches('\u{feff}').trim();
     if text.is_empty() || text.len() > 8192 {
         return Err(store_error("MODEL_OUTPUT_FORMAT"));
@@ -171,6 +185,8 @@ fn parse_private_model_reply(
                 content_hint: Some(body.to_owned()),
                 uncertainty: Some("模型回覆為一般文字，尚未結構化；請自行核對。".into()),
                 intent_candidate: None,
+                intent_candidates: None,
+                clarifying_question: None,
             }
         }
     };
@@ -199,51 +215,67 @@ fn parse_private_model_reply(
     if quote.trim().is_empty() || !original.contains(&quote) {
         return Err(store_error("MODEL_EVIDENCE_MISMATCH"));
     }
-    // A model guess is never an authorization. Even a valid proposal is withheld when
-    // the source does not explicitly express a personal wish to collaborate.
-    let can_suggest = explicit_collaboration_intent(original)
-        && original.chars().count() <= 500
-        && original.len() <= 2048;
-    let intent_candidate = if !can_suggest {
-        None
-    } else if let Some(candidate) = raw.intent_candidate {
-        let evidence = candidate.evidence_quote.trim();
-        let domain = candidate.domain.as_str();
-        if candidate.goal_text.trim().is_empty()
-            || candidate.goal_text.chars().count() > 500
-            || candidate.goal_text.len() > 2048
-            || evidence.is_empty()
-            || evidence.chars().count() > 80
-            || !original.contains(evidence)
-            || !matches!(domain, "study" | "fashion" | "car" | "other" | "unknown")
-        {
-            // Discard the AI-written goal when its evidence is wrong, but preserve
-            // the person's own explicit text as an editable private candidate.
-            // This cannot invent intent: it quotes only the user's actual source.
-            Some(PrivateIntentCandidate {
-                domain: "unknown".into(),
-                goal_text: original.trim().to_owned(),
-                evidence_quote: source_quote(original),
-            })
-        } else {
-            Some(PrivateIntentCandidate {
-                domain: candidate.domain,
-                goal_text: candidate.goal_text.trim().to_string(),
-                evidence_quote: evidence.to_string(),
-            })
+    // Content -> hypotheses -> human confirmation are distinct.
+    // Any topic, even "JLPT", may yield visible PRIVATE hypotheses. These
+    // cannot create a confirmed Goal, share consent, or a public match.
+    // Still reject fabricated evidence, unsupported fields and stale sources.
+    let can_suggest = !original.trim().is_empty();
+    // US-01: up to three PRIVATE hypotheses, never guaranteed user Intent.
+    // Reject evidence tampering and fabricated/unapproved fields. Maintain the
+    // legacy single-candidate model contract for existing installed Android versions.
+    let mut candidates: Vec<PrivateIntentCandidate> = Vec::new();
+    let supplied=raw.intent_candidates.unwrap_or_default();
+    if supplied.len()>3 {
+        return Err(store_error("MODEL_OUTPUT_UNAPPROVED_FIELDS"));
+    }
+    let mut proposed=Vec::new();
+    if let Some(single)=raw.intent_candidate {proposed.push(single);}
+    proposed.extend(supplied);
+    if can_suggest {
+        for item in proposed {
+            let evidence=item.evidence_quote.trim();
+            if item.goal_text.trim().is_empty() ||
+                item.goal_text.chars().count()>500 || item.goal_text.len()>2048 ||
+                evidence.is_empty() || evidence.chars().count()>80 ||
+                !original.contains(evidence) ||
+                !matches!(item.domain.as_str(),"study"|"fashion"|"car"|"other"|"unknown")
+            {
+                continue; // Invalid AI hypothesis never becomes confirmed or an extra slot.
+            }
+            let normalized=PrivateIntentCandidate {
+                domain:item.domain,
+                goal_text:item.goal_text.trim().to_owned(),
+                evidence_quote:evidence.to_owned(),
+            };
+            if !candidates.iter().any(|x| x.goal_text==normalized.goal_text &&
+                x.domain==normalized.domain) {
+                candidates.push(normalized);
+            }
+            if candidates.len()==3 {break;}
         }
-    } else {
-        // If Gemma returns ordinary prose or omits the optional field,
-        // preserve obvious user-stated collaborative intent as an EDITABLE
-        // quote instead of forcing them to retype it. This is source extraction,
-        // not an AI-inferred goal or a confirmed intent.
-        Some(PrivateIntentCandidate {
-            domain: "unknown".into(),
-            goal_text: original.trim().to_owned(),
-            evidence_quote: source_quote(original),
-        })
+        if candidates.is_empty() && explicit_collaboration_intent(original)
+            && original.chars().count() <= 500 && original.len() <= 2048 {
+            // For an explicit personal collaboration request, keep the old
+            // source-only fallback; never invent it for an isolated topic.
+            candidates.push(PrivateIntentCandidate {
+                domain:"unknown".into(),
+                goal_text:original.trim().to_owned(),
+                evidence_quote:source_quote(original),
+            });
+        }
+    }
+    let intent_candidate = candidates.first().cloned();
+    let question = match raw.clarifying_question {
+        Some(value) if intent_candidate.is_none() => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() || trimmed.chars().count() > 160 ||
+               trimmed.len() > 512 || trimmed.chars().any(|ch| ch.is_control())
+            { return Err(store_error("B09_INVALID_QUESTION")); }
+            Some(trimmed.to_owned())
+        }
+        _ => None,
     };
-    Ok((quote, raw.content_hint, raw.uncertainty, intent_candidate))
+    Ok((quote, raw.content_hint, raw.uncertainty, intent_candidate, question, candidates))
 }
 
 pub struct LocalStore {
@@ -347,6 +379,23 @@ impl LocalStore {
                state TEXT NOT NULL DEFAULT 'suggested_private'
                  CHECK(state='suggested_private')
              );
+             CREATE TABLE IF NOT EXISTS local_intent_questions (
+                asset_id TEXT NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
+                base_source_sha256 TEXT NOT NULL CHECK(length(base_source_sha256)=64),
+                ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 1 AND 2),
+                question TEXT NOT NULL CHECK(length(trim(question)) > 0
+                                                AND length(question) <= 512),
+                answer TEXT CHECK(answer IS NULL OR
+                                 (length(trim(answer)) > 0 AND length(answer) <= 2048)),
+                issued_at_ms INTEGER NOT NULL,
+                answered_at_ms INTEGER,
+                PRIMARY KEY(asset_id,base_source_sha256,ordinal),
+                CHECK((answer IS NULL AND answered_at_ms IS NULL) OR
+                      (answer IS NOT NULL AND answered_at_ms IS NOT NULL))
+             );
+             CREATE UNIQUE INDEX IF NOT EXISTS b09_one_pending_question
+               ON local_intent_questions(asset_id,base_source_sha256)
+               WHERE answer IS NULL;
              CREATE TABLE IF NOT EXISTS local_model_suggestions (
                asset_id TEXT PRIMARY KEY NOT NULL REFERENCES local_assets(id) ON DELETE CASCADE,
                status TEXT NOT NULL CHECK(status='suggested_private'),
@@ -614,7 +663,10 @@ impl LocalStore {
     /// 只接受 Rust 從 native plugin 收到的辨識結果，不暴露任意「偽 OCR」寫入 Command。
     pub fn save_recognition(&self, id: &str, native: NativeOcrResult) -> Result<OcrRecord, String> {
         let id = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
-        if native.engine != "mlkit_japanese_bundled" || native.engine_version != "16.0.1" {
+        let trusted_engine =
+            (native.engine == "mlkit_japanese_bundled" && native.engine_version == "16.0.1") ||
+            (native.engine == "paddle_ocrv6_small_onnx" && native.engine_version == "6.0.0");
+        if !trusted_engine {
             return Err(store_error("OCR_INVALID_RESULT"));
         }
         if native.text.len() > MAX_TEXT_BYTES || native.segments.len() > 500 ||
@@ -704,33 +756,84 @@ impl LocalStore {
     }
 
 
-    /// Rust-only: load trusted app-private text (or local OCR / user correction).
-    pub fn model_input_for_asset(&self, id: &str) -> Result<String, String> {
-        let uuid = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
-        let conn = self.connect()?;
+    /// A single source of truth for text and image/OCR input, always read from
+    /// the same SQLite connection (also under the inference commit transaction).
+    fn base_source(conn: &Connection, id: &str) -> Result<String, String> {
         let row: Option<(String, Option<String>)> = conn.query_row(
             "SELECT kind,text_content FROM local_assets WHERE id=?1",
-            params![uuid], |row| Ok((row.get(0)?, row.get(1)?)),
+            params![id], |row| Ok((row.get(0)?, row.get(1)?)),
         ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
         let (kind, text) = row.ok_or_else(|| store_error("ASSET_NOT_FOUND"))?;
         let raw = match kind.as_str() {
             "text" => text.unwrap_or_default(),
-            "image" => {
-                let ocr = self.load_ocr(&uuid)?;
-                ocr.corrected_text.filter(|v| !v.trim().is_empty())
-                    .or_else(|| ocr.raw_text.filter(|v| !v.trim().is_empty()))
-                    .ok_or_else(|| store_error("MODEL_INPUT_UNKNOWN"))?
-            }
+            "image" => conn.query_row(
+                "SELECT coalesce(nullif(trim(corrected_text),''),nullif(trim(raw_text),''),'')
+                 FROM local_ocr WHERE asset_id=?1",
+                params![id], |row| row.get::<_, String>(0),
+            ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?
+                .unwrap_or_default(),
             _ => return Err(store_error("MODEL_INPUT_UNKNOWN")),
         };
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return Err(store_error("MODEL_INPUT_UNKNOWN"));
-        }
-        if trimmed.len() > 8192 {
-            return Err(store_error("MODEL_INPUT_TOO_LARGE"));
-        }
+        let trimmed=raw.trim();
+        if trimmed.is_empty() { return Err(store_error("MODEL_INPUT_UNKNOWN")); }
         Ok(trimmed.to_owned())
+    }
+
+    /// Only the PERSON'S answers (not AI-written questions) are added to model
+    /// evidence; no model question is allowed to manufacture user collaboration.
+    fn with_user_answers(conn: &Connection, id: &str, base: &str) -> Result<String, String> {
+        let base_sha=format!("{:x}",Sha256::digest(base.as_bytes()));
+        let mut stmt=conn.prepare(
+            "SELECT answer FROM local_intent_questions
+             WHERE asset_id=?1 AND base_source_sha256=?2 AND answer IS NOT NULL
+             ORDER BY ordinal"
+        ).map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        let responses=stmt.query_map(params![id,base_sha],|row|row.get::<_,String>(0))
+            .map_err(|_| store_error("DATABASE_READ_FAILED"))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+        let mut input=base.to_owned();
+        for answer in responses {
+            input.push_str("\n\n【本人補充（非模型推測）】\n");
+            input.push_str(&answer);
+        }
+        if input.len()>8192 { return Err(store_error("MODEL_INPUT_TOO_LARGE")); }
+        Ok(input)
+    }
+
+    /// B02 text and B03 OCR + any answer converge on this ONE Gemma input path.
+    pub fn model_input_for_asset(&self, id: &str) -> Result<String, String> {
+        let uuid=Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        let conn=self.connect()?;
+        let base=Self::base_source(&conn,&uuid)?;
+        Self::with_user_answers(&conn,&uuid,&base)
+    }
+
+    /// Person must answer the current source-backed question. One question at a
+    /// time, max TWO clarifications; the separate Goal confirmation is question 3.
+    pub fn answer_intent_question(&self, id: &str, ordinal: i64, answer: &str)
+        -> Result<(), String>
+    {
+        let uuid=Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
+        let value=answer.trim();
+        if !(1..=2).contains(&ordinal) || value.is_empty() ||
+            value.len()>2048 || value.chars().count()>500 ||
+            value.chars().any(|ch| ch.is_control() && ch!='\n')
+        { return Err(store_error("B09_INVALID_ANSWER")); }
+        let mut conn=self.connect()?;
+        let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| store_error("DATABASE_BUSY"))?;
+        let base=Self::base_source(&tx,&uuid)?;
+        let source_sha=format!("{:x}",Sha256::digest(base.as_bytes()));
+        let affected=tx.execute(
+            "UPDATE local_intent_questions SET answer=?1, answered_at_ms=?2
+             WHERE asset_id=?3 AND base_source_sha256=?4 AND ordinal=?5
+               AND answer IS NULL",
+            params![value,clock_ms()?,uuid,source_sha,ordinal],
+        ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        if affected!=1 { return Err(store_error("B09_QUESTION_STALE")); }
+        tx.commit().map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        Ok(())
     }
 
     /// Model output never confirms a Goal/Need/Offer. Reject unknown JSON keys and
@@ -747,28 +850,17 @@ impl LocalStore {
         {
             return Err(store_error("MODEL_INVALID_OUTPUT"));
         }
-        let (quote, content_hint, uncertainty, intent_candidate) =
+        let (quote, content_hint, uncertainty, intent_candidate, clarifying_question, candidates) =
             parse_private_model_reply(original_input, &native.raw_text)?;
         let sha = format!("{:x}", Sha256::digest(original_input.as_bytes()));
         let now = clock_ms()?;
         let mut conn = self.connect()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| store_error("DATABASE_BUSY"))?;
-        // Check latest source under the SQLite write lock to reject stale model replies.
-        let row: Option<(String, Option<String>)> = tx.query_row(
-            "SELECT kind, text_content FROM local_assets WHERE id=?1",
-            params![uuid], |row| Ok((row.get(0)?, row.get(1)?)),
-        ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?;
-        let current = match row {
-            Some((kind, text)) if kind == "text" => text.unwrap_or_default().trim().to_owned(),
-            Some((kind, _)) if kind == "image" => tx.query_row(
-                "SELECT coalesce(nullif(trim(corrected_text),''),nullif(trim(raw_text),''),'')
-                 FROM local_ocr WHERE asset_id=?1",
-                params![uuid], |row| row.get::<_, String>(0),
-            ).optional().map_err(|_| store_error("DATABASE_READ_FAILED"))?
-                .unwrap_or_default(),
-            _ => return Err(store_error("ASSET_NOT_FOUND")),
-        };
+        // Recompute base+answered context in the SAME write transaction.
+        // OCR correction/source deletion invalidates old questions and model results.
+        let current_base=Self::base_source(&tx,&uuid)?;
+        let current=Self::with_user_answers(&tx,&uuid,&current_base)?;
         if current != original_input {
             return Err(store_error("MODEL_STALE_INPUT"));
         }
@@ -794,8 +886,8 @@ impl LocalStore {
         // A model may never insert into local_goal_drafts/confirmation_events.
         tx.execute("DELETE FROM local_intent_candidates WHERE asset_id=?1",
             params![uuid]).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
-        if let Some(ref candidate) = intent_candidate {
-            let json = serde_json::to_string(candidate)
+        if !candidates.is_empty() {
+            let json = serde_json::to_string(&candidates)
                 .map_err(|_| store_error("MODEL_OUTPUT_FORMAT"))?;
             tx.execute(
                 "INSERT INTO local_intent_candidates
@@ -803,6 +895,24 @@ impl LocalStore {
                  VALUES (?1,?2,?3,'suggested_private')",
                 params![uuid, sha, json],
             ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+        }
+        if let Some(ref question)=clarifying_question {
+            let base_sha=format!("{:x}",Sha256::digest(current_base.as_bytes()));
+            let (asked,pending,repeat):(i64,i64,i64)=tx.query_row(
+                "SELECT count(*),coalesce(sum(CASE WHEN answer IS NULL THEN 1 ELSE 0 END),0),
+                        coalesce(sum(CASE WHEN question=?3 THEN 1 ELSE 0 END),0)
+                 FROM local_intent_questions
+                 WHERE asset_id=?1 AND base_source_sha256=?2",
+                params![uuid,base_sha,question],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+            ).map_err(|_| store_error("DATABASE_READ_FAILED"))?;
+            if intent_candidate.is_none() && pending==0 && repeat==0 && asked<2 {
+                tx.execute(
+                    "INSERT INTO local_intent_questions
+                     (asset_id,base_source_sha256,ordinal,question,answer,issued_at_ms)
+                     VALUES (?1,?2,?3,?4,NULL,?5)",
+                    params![uuid,base_sha,asked+1,question,now],
+                ).map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
+            }
         }
         tx.commit().map_err(|_| store_error("DATABASE_WRITE_FAILED"))?;
         self.load_model_suggestion(&uuid)?
@@ -815,23 +925,52 @@ impl LocalStore {
         let input = self.model_input_for_asset(&uuid)?;
         let sha = format!("{:x}", Sha256::digest(input.as_bytes()));
         let conn = self.connect()?;
+        let base=Self::base_source(&conn,&uuid)?;
+        let base_sha=format!("{:x}",Sha256::digest(base.as_bytes()));
         conn.query_row(
             "SELECT s.asset_id,s.status,s.evidence_quote,s.content_hint,s.uncertainty,
                     s.model_id,s.runtime,s.backend,s.elapsed_ms,s.updated_at_ms,
-                    i.candidate_json
+                    i.candidate_json,
+                    CASE WHEN i.candidate_json IS NULL THEN q.ordinal ELSE NULL END,
+                    CASE WHEN i.candidate_json IS NULL THEN q.question ELSE NULL END
              FROM local_model_suggestions s
              LEFT JOIN local_intent_candidates i ON i.asset_id=s.asset_id
                AND i.source_sha256=s.source_sha256
+             LEFT JOIN local_intent_questions q ON q.asset_id=s.asset_id
+               AND q.base_source_sha256=?3 AND q.answer IS NULL
              WHERE s.asset_id=?1 AND s.source_sha256=?2",
-            params![uuid, sha],
+            params![uuid, sha,base_sha],
             |row| {
                 let json: Option<String> = row.get(10)?;
-                let candidate = json.map(|v| serde_json::from_str::<PrivateIntentCandidate>(&v))
-                    .transpose().map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let candidates: Vec<PrivateIntentCandidate> = match json {
+                    None => Vec::new(),
+                    Some(value) => {
+                        let parsed: serde_json::Value=serde_json::from_str(&value)
+                            .map_err(|_|rusqlite::Error::InvalidQuery)?;
+                        if parsed.is_array() {
+                            serde_json::from_value(parsed)
+                                .map_err(|_|rusqlite::Error::InvalidQuery)?
+                        } else {
+                            // Migration-safe: PR #16 wrote a single JSON object.
+                            vec![serde_json::from_value(parsed)
+                                .map_err(|_|rusqlite::Error::InvalidQuery)?]
+                        }
+                    }
+                };
+                if candidates.len()>3 {return Err(rusqlite::Error::InvalidQuery);}
+                let candidate=candidates.first().cloned();
                 Ok(ModelSuggestion {
                     asset_id: row.get(0)?, status: row.get(1)?,
                     evidence_quote: row.get(2)?, content_hint: row.get(3)?,
                     uncertainty: row.get(4)?, intent_candidate: candidate,
+                    intent_candidates:candidates,
+                    pending_question: match row.get::<_,Option<i64>>(11)? {
+                        Some(ordinal) => Some(PendingIntentQuestion {
+                            ordinal,
+                            text: row.get(12)?,
+                        }),
+                        None => None,
+                    },
                     model_id: row.get(5)?, runtime: row.get(6)?, backend: row.get(7)?,
                     elapsed_ms: row.get::<_, i64>(8)?.max(0) as u64,
                     updated_at_ms: row.get(9)?,
@@ -1160,6 +1299,21 @@ mod tests {
     }
 
     #[test]
+    fn b03_paddle_v6_replaces_mlkit_without_migrating_private_photos() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let saved = store.save(png_drop(&tiny_png())).unwrap();
+        let mut updated = recognized_ocr("日本語能力試験 JLPT N2");
+        updated.engine = "paddle_ocrv6_small_onnx".into();
+        updated.engine_version = "6.0.0".into();
+        let ocr = store.save_recognition(&saved.id, updated).unwrap();
+        assert_eq!(ocr.raw_text.as_deref(), Some("日本語能力試験 JLPT N2"));
+        assert_eq!(ocr.engine.as_deref(), Some("paddle_ocrv6_small_onnx"));
+        assert_eq!(ocr.engine_version.as_deref(), Some("6.0.0"));
+        assert_eq!(store.load(&saved.id).unwrap().summary.id, saved.id);
+    }
+
+    #[test]
     fn b03_unknown_is_not_faked_and_manual_correction_stays_independent() {
         let dir = tempfile::tempdir().unwrap();
         let store = LocalStore::open(dir.path()).unwrap();
@@ -1321,10 +1475,36 @@ mod tests {
                 "intentCandidate":{{"domain":"study","goalText":"想找真人學伴",
                 "evidenceQuote":"{}"}}}}"#, source, source);
             let saved = store.save_model_suggestion(&asset.id, source, model_reply(&reply)).unwrap();
-            assert!(saved.intent_candidate.is_none(), "ambiguous source: {source}");
+            assert_eq!(saved.intent_candidate.as_ref().unwrap().evidence_quote, source,
+                "AI hypotheses remain displayable for ambiguous topics: {source}");
+            assert_eq!(saved.status, "suggested_private");
             assert!(crate::goal_draft::GoalStore::open(dir.path())
                 .unwrap().load(&asset.id).unwrap().is_none());
         }
+    }
+
+    #[test]
+    fn us01_e2b_jlpt_three_private_hypotheses_visible_without_explicit_wish() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStore::open(dir.path()).unwrap();
+        let asset = store.save(text_drop("JLPT")).unwrap();
+        let response = model_reply(r#"{"contentHint":"日語能力測驗",
+            "intentCandidates":[
+                {"domain":"study","goalText":"了解 JLPT 級別","evidenceQuote":"JLPT"},
+                {"domain":"study","goalText":"準備 JLPT 考試","evidenceQuote":"JLPT"},
+                {"domain":"study","goalText":"找人一起練日文","evidenceQuote":"JLPT"}]}"#);
+        let result = store.save_model_suggestion(&asset.id, "JLPT", response).unwrap();
+        assert_eq!(result.intent_candidates.len(), 3);
+        assert_eq!(result.intent_candidates[0].goal_text, "了解 JLPT 級別");
+        assert_eq!(result.intent_candidates[2].goal_text, "找人一起練日文");
+        assert_eq!(result.status, "suggested_private");
+        assert!(crate::goal_draft::GoalStore::open(dir.path())
+            .unwrap().load(&asset.id).unwrap().is_none(),
+            "AI hypotheses cannot forge Goal confirmation");
+        drop(store);
+        let reopened = LocalStore::open(dir.path()).unwrap();
+        assert_eq!(reopened.load_model_suggestion(&asset.id).unwrap()
+            .unwrap().intent_candidates.len(), 3);
     }
 
     #[test]
@@ -1449,6 +1629,246 @@ mod tests {
         assert_eq!(store.save_model_suggestion(&saved.id, "パクる", reply).unwrap_err(),
                    "MODEL_INVALID_OUTPUT");
         assert_eq!(store.model_input_for_asset("../../secret").unwrap_err(), "INVALID_ASSET_ID");
+    }
+
+    #[test]
+    fn us01b_ocr_and_text_share_the_private_intent_goal_pipeline() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(png_drop(&tiny_png())).unwrap();
+        let original="我想找人一起練 JLPT N2 口說";
+        assert_eq!(store.model_input_for_asset(&image.id).unwrap_err(),"MODEL_INPUT_UNKNOWN");
+        store.save_recognition(&image.id,recognized_ocr(original)).unwrap();
+        assert_eq!(store.model_input_for_asset(&image.id).unwrap(),original);
+        let result=store.save_model_suggestion(&image.id,original,
+            model_reply(r#"{"contentHint":"日文口說",
+                "intentCandidate":{"domain":"study","goalText":"找 N2 口說學伴",
+                "evidenceQuote":"我想找人一起練"}}"#)).unwrap();
+        assert_eq!(result.intent_candidate.unwrap().domain,"study");
+        let goals=crate::goal_draft::GoalStore::open(dir.path()).unwrap();
+        assert!(goals.load(&image.id).unwrap().is_none());
+        let confirmed=goals.confirm(crate::goal_draft::ConfirmGoalInput {
+            asset_id:image.id.clone(), goal_text:"本人確認 N2 口說".into(),
+            confirmation_action:"confirm_goal".into(),expected_revision:0,
+        }).unwrap();
+        assert_eq!(confirmed.intent_state,"draft_private");
+        assert!(!confirmed.share_consent);
+        assert_eq!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&image.id).unwrap().unwrap().goal_text,"本人確認 N2 口說");
+    }
+
+    #[test]
+    fn us01b_ocr_source_correction_invalidates_candidate_and_rejects_old_result() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(png_drop(&tiny_png())).unwrap();
+        let first="我想找人一起練 JLPT N2 口說";
+        store.save_recognition(&image.id,recognized_ocr(first)).unwrap();
+        store.save_model_suggestion(&image.id,first,
+            model_reply(r#"{"contentHint":"N2","intentCandidate":{"domain":"study",
+                "goalText":"找學伴","evidenceQuote":"我想找人"}}"#)).unwrap();
+        store.correct_ocr(&image.id,"時裝版型設計參考 パクる").unwrap();
+        assert_eq!(store.model_input_for_asset(&image.id).unwrap(),"時裝版型設計參考 パクる");
+        assert!(store.load_model_suggestion(&image.id).unwrap().is_none());
+        assert_eq!(store.save_model_suggestion(&image.id,first,
+            model_reply(r#"{"contentHint":"過期"}"#)).unwrap_err(),"MODEL_STALE_INPUT");
+        let next=store.save_model_suggestion(&image.id,"時裝版型設計參考 パクる",
+            model_reply(r#"{"contentHint":"服裝設計語境",
+                "intentCandidate":{"domain":"study","goalText":"找學伴",
+                "evidenceQuote":"パクる"}}"#)).unwrap();
+        assert_eq!(next.intent_candidate.as_ref().unwrap().goal_text, "找學伴",
+            "private hypothesis may display even when context is ambiguous");
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&image.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn us01b_image_without_ocr_remains_unknown_and_private() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(png_drop(&tiny_png())).unwrap();
+        store.save_recognition(&image.id,recognized_ocr("")).unwrap();
+        assert_eq!(store.model_input_for_asset(&image.id).unwrap_err(),"MODEL_INPUT_UNKNOWN");
+        assert!(store.load_ocr(&image.id).unwrap().raw_text.unwrap().is_empty());
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&image.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn b09_one_question_then_person_answer_feeds_same_private_gemma_source() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(png_drop(&tiny_png())).unwrap();
+        store.save_recognition(&image.id,recognized_ocr("パクる")).unwrap();
+        let first=store.model_input_for_asset(&image.id).unwrap();
+        let proposal=store.save_model_suggestion(&image.id,&first,model_reply(
+            r#"{"evidenceQuote":"パクる","contentHint":"一個多義詞",
+                "clarifyingQuestion":"你想只收藏，還是找真人練習？"}"#,
+        )).unwrap();
+        let question=proposal.pending_question.expect("model can ask one private question");
+        assert_eq!(question.ordinal,1);
+        assert_eq!(question.text,"你想只收藏，還是找真人練習？");
+        assert!(proposal.intent_candidate.is_none());
+        assert!(!first.contains(&question.text),
+            "Model-written question must not be passed off as user evidence");
+        assert_eq!(store.model_input_for_asset(&image.id).unwrap(),"パクる");
+        store.answer_intent_question(&image.id,1,"我想找人一起練 JLPT N2 口說").unwrap();
+        assert_eq!(store.answer_intent_question(&image.id,1,"再答一次").unwrap_err(),
+            "B09_QUESTION_STALE");
+        let answer_context=store.model_input_for_asset(&image.id).unwrap();
+        assert!(answer_context.contains("【本人補充（非模型推測）】"));
+        assert!(answer_context.contains("我想找人一起練 JLPT N2 口說"));
+        assert!(!answer_context.contains(&question.text));
+        assert!(store.load_model_suggestion(&image.id).unwrap().is_none(),
+            "Source-versioned model output must be recomputed after human answer");
+        let second=store.save_model_suggestion(&image.id,&answer_context,model_reply(
+            r#"{"contentHint":"真人口說練習",
+                "intentCandidate":{"domain":"study",
+                "goalText":"想找真人學伴練 JLPT N2 口說",
+                "evidenceQuote":"我想找人一起練 JLPT N2 口說"}}"#,
+        )).unwrap();
+        assert!(second.pending_question.is_none());
+        assert_eq!(second.intent_candidate.unwrap().domain,"study");
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&image.id).unwrap().is_none(),"AI cannot confirm Goal");
+    }
+
+    #[test]
+    fn b09_only_two_clarifications_then_human_goal_confirm_is_third_checkpoint() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(text_drop("パクる")).unwrap();
+        let first=store.model_input_for_asset(&image.id).unwrap();
+        let reply1=r#"{"contentHint":"多義詞","clarifyingQuestion":"你想了解詞義嗎？"}"#;
+        let v1=store.save_model_suggestion(&image.id,&first,model_reply(reply1)).unwrap();
+        assert_eq!(v1.pending_question.unwrap().ordinal,1);
+        let repeated=store.save_model_suggestion(&image.id,&first,
+            model_reply(r#"{"contentHint":"多義詞","clarifyingQuestion":"想找人聊聊嗎？"}"#)
+        ).unwrap();
+        assert_eq!(repeated.pending_question.unwrap().ordinal,1,
+            "Retry cannot issue an extra question while one is outstanding");
+        store.answer_intent_question(&image.id,1,"想了解詞義").unwrap();
+        let next=store.model_input_for_asset(&image.id).unwrap();
+        let v2=store.save_model_suggestion(&image.id,&next,
+            model_reply(r#"{"contentHint":"多義詞",
+                "clarifyingQuestion":"你要保存還是找人練習？"}"#)).unwrap();
+        assert_eq!(v2.pending_question.unwrap().ordinal,2);
+        store.answer_intent_question(&image.id,2,"先只收藏這個詞").unwrap();
+        let last=store.model_input_for_asset(&image.id).unwrap();
+        let v3=store.save_model_suggestion(&image.id,&last,model_reply(
+            r#"{"contentHint":"詞義",
+                "clarifyingQuestion":"第三個追問不應發出"}"#,
+        )).unwrap();
+        assert!(v3.pending_question.is_none(),
+            "SQLite should permit at most two model clarifications; Goal confirm is separate");
+        assert_eq!(store.answer_intent_question(&image.id,3,"不可以").unwrap_err(),
+            "B09_INVALID_ANSWER");
+        let conn=store.connect().unwrap();
+        let count:i64=conn.query_row(
+            "SELECT count(*) FROM local_intent_questions WHERE asset_id=?1",
+            params![image.id],|r|r.get(0)).unwrap();
+        assert_eq!(count,2);
+        assert!(conn.execute(
+            "INSERT INTO local_intent_questions
+             (asset_id,base_source_sha256,ordinal,question,issued_at_ms)
+             VALUES (?1,?2,3,'wrong',123)",
+            params![image.id,format!("{:x}",Sha256::digest("パクる".as_bytes()))],
+        ).is_err(),"direct SQL cannot insert a third question");
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&image.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn b09_source_revision_change_rejects_old_ocr_question_answer() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let image=store.save(png_drop(&tiny_png())).unwrap();
+        store.correct_ocr(&image.id,"パクる").unwrap();
+        let source=store.model_input_for_asset(&image.id).unwrap();
+        store.save_model_suggestion(&image.id,&source,model_reply(
+            r#"{"contentHint":"多義詞","clarifyingQuestion":"要找人討論嗎？"}"#,
+        )).unwrap();
+        store.correct_ocr(&image.id,"BMW E46 改裝參考").unwrap();
+        assert!(store.load_model_suggestion(&image.id).unwrap().is_none());
+        assert_eq!(store.answer_intent_question(&image.id,1,"找人").unwrap_err(),
+            "B09_QUESTION_STALE");
+        assert_eq!(store.save_model_suggestion(&image.id,&source,
+            model_reply(r#"{"contentHint":"過期"}"#)).unwrap_err(),"MODEL_STALE_INPUT");
+    }
+
+    #[test]
+    fn us01_multiple_private_hypotheses_evidence_checked_and_sqlite_legacy_compatible() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let input="我想找人一起練 JLPT N2 口說，也想找人交換文法題目";
+        let asset=store.save(text_drop(input)).unwrap();
+        let result=store.save_model_suggestion(&asset.id,input,model_reply(
+            r#"{"evidenceQuote":"我想找人一起練",
+                "contentHint":"日語合作",
+                "intentCandidates":[
+                  {"domain":"study","goalText":"找人一起練 N2 口說",
+                   "evidenceQuote":"我想找人一起練"},
+                  {"domain":"study","goalText":"找人交換 N2 文法題",
+                   "evidenceQuote":"想找人交換文法題目"}
+                ]}"#,
+        )).unwrap();
+        assert_eq!(result.intent_candidates.len(),2);
+        assert_eq!(result.intent_candidate.as_ref().unwrap(),&result.intent_candidates[0]);
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&asset.id).unwrap().is_none(),"multiple AI hypotheses cannot confirm Goal");
+        assert_eq!(store.load_model_suggestion(&asset.id).unwrap()
+            .unwrap().intent_candidates.len(),2);
+        // Previously installed PR#16 Android stored a single candidate JSON object,
+        // not an array. A schema upgrade must still read it without data loss.
+        let prior=serde_json::to_string(&result.intent_candidates[0]).unwrap();
+        store.connect().unwrap().execute(
+            "UPDATE local_intent_candidates SET candidate_json=?1 WHERE asset_id=?2",
+            params![prior,asset.id],
+        ).unwrap();
+        let old=store.load_model_suggestion(&asset.id).unwrap().unwrap();
+        assert_eq!(old.intent_candidates.len(),1);
+        assert_eq!(old.intent_candidate.unwrap().goal_text,"找人一起練 N2 口說");
+    }
+
+    #[test]
+    fn us01_ambiguous_topics_can_show_unconfirmed_private_hypotheses() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let input="時裝設計をパクる　BMW E46 改裝參考";
+        let asset=store.save(text_drop(input)).unwrap();
+        let response=store.save_model_suggestion(&asset.id,input,model_reply(
+            r#"{"contentHint":"時裝／汽車不同主題",
+                "intentCandidates":[
+                  {"domain":"study","goalText":"找 N2 學伴",
+                   "evidenceQuote":"パクる"},
+                  {"domain":"car","goalText":"找汽車技師",
+                   "evidenceQuote":"BMW E46"}]}"#,
+        )).unwrap();
+        assert_eq!(response.intent_candidates.len(), 2,
+            "AI possibilities can be displayed even without explicit user wishes");
+        assert_eq!(response.intent_candidates[1].domain, "car");
+        assert_eq!(response.status, "suggested_private");
+        assert!(crate::goal_draft::GoalStore::open(dir.path()).unwrap()
+            .load(&asset.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn us01_multi_candidates_reject_forged_model_confirmation_and_large_set() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=LocalStore::open(dir.path()).unwrap();
+        let input="我想找人一起練 JLPT N2";
+        let asset=store.save(text_drop(input)).unwrap();
+        assert_eq!(store.save_model_suggestion(&asset.id,input,model_reply(
+            r#"{"intentCandidates":[
+                {"domain":"study","goalText":"N2","evidenceQuote":"我想找人","confirmed":true}]}"#
+        )).unwrap_err(),"MODEL_OUTPUT_FORMAT");
+        let items=vec![
+            serde_json::json!({"domain":"study","goalText":"a","evidenceQuote":"我想找人"});
+            4
+        ];
+        let raw=serde_json::json!({"contentHint":"N2","intentCandidates":items}).to_string();
+        assert_eq!(store.save_model_suggestion(&asset.id,input,model_reply(&raw))
+            .unwrap_err(),"MODEL_OUTPUT_UNAPPROVED_FIELDS");
     }
 
 }

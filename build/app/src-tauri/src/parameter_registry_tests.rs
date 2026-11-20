@@ -276,3 +276,110 @@ fn b05_source_deletion_cascades_parameters_evidence_and_event_history() {
         assert_eq!(n,0,"{table} must cascade");
     }
 }
+
+
+#[test]
+fn b06_confirmed_known_concept_gets_one_private_slot_and_reopens() {
+    let (dir,_,draft)=setup();
+    let store=ParameterStore::open(dir.path()).unwrap();
+    let proposal=store.save(proposal(&draft,"JLPT N2",None,0)).unwrap();
+    assert_eq!(proposal.match_slot_index,None);
+    let confirmed=store.confirm(confirmation(&draft,&proposal.id,1)).unwrap();
+    assert_eq!(confirmed.state,"CONFIRMED");
+    assert_eq!(confirmed.match_slot_index,Some(0));
+    assert_eq!(confirmed.visibility,"private");
+    assert!(!confirmed.share_consent);
+    drop(store);
+    let store=ParameterStore::open(dir.path()).unwrap();
+    let rows=store.list(&draft).unwrap();
+    assert_eq!(rows.len(),1);
+    assert_eq!(rows[0].match_slot_index,Some(0));
+    let conn=store.connect().unwrap();
+    let count:i64=conn.query_row(
+        "SELECT COUNT(*) FROM local_matching_slots WHERE draft_id=?1",
+        params![draft],|r|r.get(0)).unwrap();
+    assert_eq!(count,1);
+}
+
+#[test]
+fn b06_sqlite_rejects_ninth_slot_direct_tamper_and_unconfirmed_concept() {
+    let (dir,_,draft)=setup();
+    let store=ParameterStore::open(dir.path()).unwrap();
+    let known=store.save(proposal(&draft,"N2",None,0)).unwrap();
+    store.confirm(confirmation(&draft,&known.id,1)).unwrap();
+    let unknown=store.save(proposal(&draft,"study.unapproved",None,0)).unwrap();
+    let conn=store.connect().unwrap();
+    assert!(conn.execute(
+        "UPDATE local_matching_slots SET slot_index=8 WHERE parameter_id=?1",
+        params![known.id]).is_err(),"slots immutable even on direct UPDATE");
+    assert!(conn.execute(
+        "INSERT INTO local_matching_slots
+            (parameter_id,draft_id,concept_id,slot_index,goal_revision,created_at_ms)
+         VALUES (?1,?2,'study.jlpt_level',8,1,123)",
+        params![unknown.id,draft]).is_err(),"SQLite must reject index 8 / ninth slot");
+    assert!(conn.execute(
+        "INSERT INTO local_matching_slots
+            (parameter_id,draft_id,concept_id,slot_index,goal_revision,created_at_ms)
+         VALUES (?1,?2,'study.jlpt_level',1,1,123)",
+        params![unknown.id,draft]).is_err(),"Unconfirmed proposal may not forge an active slot");
+    let actual:i64=conn.query_row("SELECT count(*) FROM local_matching_slots",[],
+        |r|r.get(0)).unwrap();
+    assert_eq!(actual,1,"No eviction of existing condition");
+}
+
+#[test]
+fn b06_edit_source_or_goal_revision_releases_slot_without_auto_approval() {
+    let (dir,asset,draft)=setup();
+    let store=ParameterStore::open(dir.path()).unwrap();
+    let known=store.save(proposal(&draft,"N2",None,0)).unwrap();
+    let confirmed=store.confirm(confirmation(&draft,&known.id,1)).unwrap();
+    assert_eq!(confirmed.match_slot_index,Some(0));
+    let modified=store.save(proposal(&draft,"日語二級",None,2)).unwrap();
+    assert_eq!(modified.state,"OBSERVED");
+    assert_eq!(modified.match_slot_index,None,"editing requires re-confirmation");
+    let confirmed=store.confirm(confirmation(&draft,&modified.id,3)).unwrap();
+    assert_eq!(confirmed.match_slot_index,Some(0));
+    crate::goal_draft::GoalStore::open(dir.path()).unwrap().confirm(
+        ConfirmGoalInput { asset_id:asset,goal_text:"改成只練聽力".into(),
+            confirmation_action:"confirm_goal".into(),expected_revision:1}
+    ).unwrap();
+    let items=store.list(&draft).unwrap();
+    assert!(items[0].stale);
+    assert_eq!(items[0].match_slot_index,None);
+    let conn=store.connect().unwrap();
+    let n:i64=conn.query_row("SELECT count(*) FROM local_matching_slots",[],
+        |r|r.get(0)).unwrap();
+    assert_eq!(n,0);
+}
+
+#[test]
+fn b06_deleting_original_private_content_cascades_slots() {
+    let (dir,asset,draft)=setup();
+    let store=ParameterStore::open(dir.path()).unwrap();
+    let known=store.save(proposal(&draft,"N2",None,0)).unwrap();
+    store.confirm(confirmation(&draft,&known.id,1)).unwrap();
+    LocalStore::open(dir.path()).unwrap().delete(&asset).unwrap();
+    let conn=store.connect().unwrap();
+    let n:i64=conn.query_row("SELECT count(*) FROM local_matching_slots",[],
+        |r|r.get(0)).unwrap();
+    assert_eq!(n,0);
+}
+
+/// T10/T12: exercise exact 8 + ninth boundary with synthetic slot indices.
+/// These do NOT authorize eight new concepts in the live T-01 registry.
+#[test]
+fn b06_eight_slots_full_ninth_rejected_without_eviction() {
+    let mut used: Vec<i64> = Vec::new();
+    for expected in 0..8_i64 {
+        let slot = lowest_free_matching_slot(&used).unwrap();
+        assert_eq!(slot, expected);
+        used.push(slot);
+    }
+    assert_eq!(lowest_free_matching_slot(&used).unwrap_err(),
+        "B06_SLOT_BUDGET_EXCEEDED");
+    assert_eq!(used, (0_i64..8).collect::<Vec<_>>(),
+        "the ninth must never evict an existing hard constraint");
+    used.remove(3);
+    assert_eq!(lowest_free_matching_slot(&used).unwrap(), 3,
+        "a genuinely released slot is reused deterministically");
+}

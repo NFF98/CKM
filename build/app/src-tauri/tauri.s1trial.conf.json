@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CAKAMI TEST",
+  "bundle": {
+    "android": {
+      "debugApplicationIdSuffix": ".s1trial"
+    }
+  }
+}

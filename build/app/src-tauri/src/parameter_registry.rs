@@ -85,6 +85,8 @@ pub struct PrivateParameter {
     pub goal_revision: i64,
     pub version: i64,
     pub stale: bool,
+    /// B06 private, source-verified slot; never indicates Cloud consent or publication.
+    pub match_slot_index: Option<i64>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
@@ -159,6 +161,13 @@ fn normalize(alias: &str, value: Option<&str>) -> Result<Normalized, String> {
         raw_value: explicit.or_else(|| Some(alias)),
         state: "UNKNOWN", registry_version: 0,
     })
+}
+
+/// B06 capacity decision is independent of the live T-01 Registry whitelist.
+/// A synthetic 8+1 test may exercise this boundary without approving test concepts.
+fn lowest_free_matching_slot(occupied: &[i64]) -> Result<i64, String> {
+    (0_i64..8_i64).find(|index| !occupied.contains(index))
+        .ok_or_else(|| err("B06_SLOT_BUDGET_EXCEEDED"))
 }
 
 fn validate_expiry(policy: &str, expires: Option<i64>, now: i64) -> Result<(), String> {
@@ -260,7 +269,64 @@ impl ParameterStore {
                ON local_parameter_drafts(draft_id,concept_id)
                WHERE concept_id IS NOT NULL;
              CREATE INDEX IF NOT EXISTS idx_parameter_draft
-               ON local_parameter_drafts(draft_id,updated_at_ms DESC);"
+               ON local_parameter_drafts(draft_id,updated_at_ms DESC);
+             -- B06: the eight slots are an atomic, SQLite-enforced CAPACITY, not eight questions.
+             -- Only the B05 allowlisted concept can reserve a private slot in P1.
+             CREATE TABLE IF NOT EXISTS local_matching_slots (
+                parameter_id TEXT NOT NULL PRIMARY KEY
+                    REFERENCES local_parameter_drafts(id) ON DELETE CASCADE,
+                draft_id TEXT NOT NULL REFERENCES local_goal_drafts(id) ON DELETE CASCADE,
+                concept_id TEXT NOT NULL CHECK(concept_id='study.jlpt_level'),
+                slot_index INTEGER NOT NULL CHECK(slot_index BETWEEN 0 AND 7),
+                goal_revision INTEGER NOT NULL CHECK(goal_revision >= 1),
+                created_at_ms INTEGER NOT NULL,
+                UNIQUE(draft_id,concept_id),
+                UNIQUE(draft_id,slot_index)
+             );
+             CREATE TRIGGER IF NOT EXISTS b06_no_unverified_slot
+             BEFORE INSERT ON local_matching_slots BEGIN
+               SELECT CASE WHEN NOT EXISTS (
+                 SELECT 1 FROM local_parameter_drafts p
+                 JOIN local_goal_drafts g ON g.id=p.draft_id
+                 JOIN local_parameter_confirmation_events e ON e.id=p.confirmed_event_id
+                 WHERE p.id=NEW.parameter_id AND p.draft_id=NEW.draft_id
+                   AND p.concept_id=NEW.concept_id
+                   AND p.concept_id='study.jlpt_level'
+                   AND p.state='CONFIRMED' AND p.source='user_explicit'
+                   AND p.share_consent=0 AND p.visibility='private'
+                   AND p.goal_revision=NEW.goal_revision AND g.revision=NEW.goal_revision
+                   AND e.parameter_id=p.id AND e.version=p.version
+                   AND NOT EXISTS (
+                      SELECT 1 FROM local_goal_lifecycle l
+                      WHERE l.draft_id=p.draft_id
+                        AND (l.state='cancelled_private' OR
+                        (l.expires_at_ms IS NOT NULL AND
+                         l.expires_at_ms<=CAST(strftime('%s','now') AS INTEGER)*1000))
+                   )
+                   AND (p.expires_at_ms IS NULL
+                        OR p.expires_at_ms > CAST(strftime('%s','now') AS INTEGER)*1000)
+               ) THEN RAISE(ABORT,'B06_UNVERIFIED_SLOT') END;
+             END;
+             CREATE TRIGGER IF NOT EXISTS b06_immutable_slot
+             BEFORE UPDATE ON local_matching_slots BEGIN
+               SELECT RAISE(ABORT,'B06_IMMUTABLE_SLOT');
+             END;
+             CREATE TRIGGER IF NOT EXISTS b06_reset_slot_after_parameter_edit
+             AFTER UPDATE OF state,concept_id,goal_revision,value_json,expires_at_ms,
+                             expiry_policy,confirmed_event_id ON local_parameter_drafts
+             BEGIN DELETE FROM local_matching_slots WHERE parameter_id=NEW.id; END;
+             CREATE TRIGGER IF NOT EXISTS b06_reset_slots_after_goal_revision
+             AFTER UPDATE OF revision ON local_goal_drafts
+             BEGIN DELETE FROM local_matching_slots WHERE draft_id=NEW.id; END;
+             CREATE TRIGGER IF NOT EXISTS b06_reset_slots_after_lifecycle_insert
+             AFTER INSERT ON local_goal_lifecycle
+             WHEN NEW.state!='active_private'
+               OR (NEW.expires_at_ms IS NOT NULL AND
+                   NEW.expires_at_ms<=CAST(strftime('%s','now') AS INTEGER)*1000)
+             BEGIN DELETE FROM local_matching_slots WHERE draft_id=NEW.draft_id; END;
+             CREATE TRIGGER IF NOT EXISTS b06_reset_slots_after_lifecycle_change
+             AFTER UPDATE OF state,expires_at_ms ON local_goal_lifecycle
+             BEGIN DELETE FROM local_matching_slots WHERE draft_id=NEW.draft_id; END;"
         ).map_err(|_| err("DATABASE_MIGRATION_FAILED"))?;
         Ok(store)
     }
@@ -275,9 +341,13 @@ impl ParameterStore {
 
     fn goal_revision(conn: &Connection, draft_id: &str) -> Result<i64, String> {
         conn.query_row(
-            "SELECT revision FROM local_goal_drafts
-             WHERE id=?1 AND intent_state='draft_private' AND visibility='private'
-               AND share_consent=0",
+            "SELECT g.revision FROM local_goal_drafts g
+             LEFT JOIN local_goal_lifecycle l ON l.draft_id=g.id
+             WHERE g.id=?1 AND g.intent_state='draft_private' AND
+               g.visibility='private' AND g.share_consent=0
+               AND (l.state IS NULL OR l.state='active_private')
+               AND (l.expires_at_ms IS NULL OR
+                    l.expires_at_ms>CAST(strftime('%s','now') AS INTEGER)*1000)",
             params![draft_id], |row| row.get(0),
         ).optional().map_err(|_| err("DATABASE_READ_FAILED"))?
             .ok_or_else(|| err("GOAL_CONFIRMATION_REQUIRED"))
@@ -298,6 +368,7 @@ impl ParameterStore {
             confirmed_event_id: row.get(16)?,
             registry_version: row.get(17)?, goal_revision,
             version, stale: goal_revision != current_goal_revision,
+            match_slot_index: row.get(23)?,
             created_at_ms: row.get(20)?, updated_at_ms: row.get(21)?,
         })
     }
@@ -312,9 +383,18 @@ impl ParameterStore {
                     p.expiry_policy,p.expires_at_ms,p.review_due_at_ms,p.visibility,
                     p.share_consent,p.confirmed_event_id,p.registry_version,
                     p.goal_revision,p.version,p.created_at_ms,p.updated_at_ms,
-                    g.revision
+                    g.revision,
+                    CASE WHEN (p.expires_at_ms IS NOT NULL AND
+                       p.expires_at_ms <= CAST(strftime('%s','now') AS INTEGER)*1000)
+                       OR l.state='cancelled_private'
+                       OR (l.expires_at_ms IS NOT NULL AND
+                           l.expires_at_ms<=CAST(strftime('%s','now') AS INTEGER)*1000)
+                       THEN NULL ELSE s.slot_index END
              FROM local_parameter_drafts p
              JOIN local_goal_drafts g ON g.id=p.draft_id
+             LEFT JOIN local_matching_slots s ON s.parameter_id=p.id
+               AND s.goal_revision=g.revision
+             LEFT JOIN local_goal_lifecycle l ON l.draft_id=g.id
              WHERE p.draft_id=?1 ORDER BY p.updated_at_ms DESC,p.id DESC"
         ).map_err(|_| err("DATABASE_READ_FAILED"))?;
         let items = stmt.query_map(params![draft_id], Self::from_row)
@@ -448,6 +528,37 @@ impl ParameterStore {
              VALUES (?1,?2,?3,'explicit_parameter_confirmation','user_explicit',?4,?5)",
             params![event_id,id,new_version,evidence,now],
         ).map_err(|_| err("DATABASE_WRITE_FAILED"))?;
+        // B06: release expired/stale allocations before assigning the lowest free
+        // slot. All operations use the SAME IMMEDIATE transaction as confirmation.
+        // Current T-01 only permits N2; never generate unknown registry concepts.
+        tx.execute(
+            "DELETE FROM local_matching_slots WHERE parameter_id IN (
+               SELECT s.parameter_id FROM local_matching_slots s
+               JOIN local_parameter_drafts p ON p.id=s.parameter_id
+               JOIN local_goal_drafts g ON g.id=s.draft_id
+               WHERE s.draft_id=?1 AND
+                 (p.state!='CONFIRMED' OR p.goal_revision!=g.revision OR
+                  (p.expires_at_ms IS NOT NULL AND p.expires_at_ms<=?2))
+             )", params![draft_id,now],
+        ).map_err(|_| err("DATABASE_WRITE_FAILED"))?;
+        let occupied: Vec<i64> = {
+            let mut stmt=tx.prepare(
+                "SELECT slot_index FROM local_matching_slots WHERE draft_id=?1"
+            ).map_err(|_| err("DATABASE_READ_FAILED"))?;
+            let rows=stmt.query_map(params![draft_id],|row|row.get(0))
+                .map_err(|_| err("DATABASE_READ_FAILED"))?;
+            let collected=rows.collect::<rusqlite::Result<Vec<i64>>>()
+                .map_err(|_| err("DATABASE_READ_FAILED"))?;
+            collected
+        };
+        let slot=lowest_free_matching_slot(&occupied)?;
+        tx.execute(
+            "INSERT INTO local_matching_slots
+               (parameter_id,draft_id,concept_id,slot_index,goal_revision,created_at_ms)
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![id,draft_id,concept.as_deref().unwrap_or_default(),slot,
+                    goal_revision,now],
+        ).map_err(|_| err("B06_SLOT_ADMISSION_REJECTED"))?;
         tx.commit().map_err(|_| err("DATABASE_WRITE_FAILED"))?;
         self.list(&draft_id)?.into_iter().find(|x| x.id==id)
             .ok_or_else(|| err("DATABASE_READ_FAILED"))

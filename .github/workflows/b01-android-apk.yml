@@ -1,4 +1,4 @@
-name: B01 Android APK Smoke
+name: B01 Android APK (Pinned Clean Signing Certificate)
 # APK 採批次真機驗收：平時 PR 提交只執行 TypeScript／Rust／Harness CI。
 # 至少兩個可供真機驗收的功能已完成且登記待測時，
 # Coding Agent 才為對應 PR 加上 apk-batch-ready label 啟動一次打包。
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   apk:
-    name: Android ARM64 debug APK (not a real-device test)
+    name: Android ARM64 clean fixed-signature APK (not a real-device test)
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'apk-batch-ready'
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -46,15 +46,63 @@ jobs:
       - name: Initialize Tauri Android project
         working-directory: build/app
         run: npx tauri android init --ci
-      - name: Build installable Android debug APK
+      # This fixed certificate belongs to the CLEAN Android APK created 2026-11-19.
+      # Unlike a GitHub runner's ephemeral debug.keystore, this certificate
+      # must be used for EVERY subsequent com.nff98.ckm.dev APK upgrade.
+      # Keystore/password must be in private GitHub Actions Secrets; NEVER
+      # commit/publish the private key, password or its base64 representation.
+      - name: Verify exact clean-release signing key is configured (required)
+        shell: bash
+        env:
+          CKM_ANDROID_FIXED_KEYSTORE_BASE64: ${{ secrets.CKM_ANDROID_FIXED_KEYSTORE_BASE64 }}
+          CKM_ANDROID_FIXED_KEYSTORE_PASSWORD: ${{ secrets.CKM_ANDROID_FIXED_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "${CKM_ANDROID_FIXED_KEYSTORE_BASE64}" ] || [ -z "${CKM_ANDROID_FIXED_KEYSTORE_PASSWORD}" ]; then
+            echo "::error::Missing clean-release signing secrets. Refusing to publish another non-upgradable APK. See test/ANDROID_SIGNING_RECOVERY.md."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$CKM_ANDROID_FIXED_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/cakami-fixed-v1.p12"
+          test -s "$RUNNER_TEMP/cakami-fixed-v1.p12"
+          keytool -list -keystore "$RUNNER_TEMP/cakami-fixed-v1.p12" \
+            -storetype PKCS12 -storepass "$CKM_ANDROID_FIXED_KEYSTORE_PASSWORD" \
+            -alias cakami-fixed-2026 > /dev/null
+          echo "Clean-release signing key exists (private key not printed)."
+      - name: Build Android debug APK (to be re-signed)
         working-directory: build/app
         run: npx tauri android build --debug --apk --target aarch64 --ci
+      - name: Replace ephemeral debug signing with fixed clean-release signature
+        shell: bash
+        env:
+          CKM_ANDROID_FIXED_KEYSTORE_PASSWORD: ${{ secrets.CKM_ANDROID_FIXED_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          APK="$(find build/app/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" \
+            | grep -F "package: name='com.nff98.ckm.dev'"
+          SIGNED="$RUNNER_TEMP/cakami-fixed-signed.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$RUNNER_TEMP/cakami-fixed-v1.p12" --ks-type PKCS12 \
+            --ks-key-alias cakami-fixed-2026 \
+            --ks-pass "pass:$CKM_ANDROID_FIXED_KEYSTORE_PASSWORD" \
+            --key-pass "pass:$CKM_ANDROID_FIXED_KEYSTORE_PASSWORD" \
+            --out "$SIGNED" "$APK"
+          EXPECTED="a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5"
+          CERT="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify \
+            --print-certs "$SIGNED" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          if [ "$CERT" != "$EXPECTED" ]; then
+            echo "::error::APK cert mismatch. Refusing to upload an un-upgradable CAKAMI."
+            exit 1
+          fi
+          mv "$SIGNED" "$APK"
+          echo "CAKAMI fixed signing fingerprint confirmed: $CERT"
       - name: Confirm APK exists
         run: |
           find build/app/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print
           test -n "$(find build/app/src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
       - uses: actions/upload-artifact@v4
         with:
-          name: cakami-b01-android-arm64-debug
+          name: cakami-android-arm64-fixed-signature
           path: build/app/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error

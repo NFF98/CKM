@@ -19,6 +19,11 @@ export interface PrivateIntentCandidate {
   evidenceQuote: string;
 }
 
+export interface PendingIntentQuestion {
+  ordinal: 1 | 2;
+  text: string;
+}
+
 export interface ModelSuggestion {
   assetId: string;
   status: "suggested_private";
@@ -27,6 +32,9 @@ export interface ModelSuggestion {
   uncertainty: string | null;
   /** AI can suggest but NEVER confirm, publish, match or consent. */
   intentCandidate: PrivateIntentCandidate | null;
+  /** Multiple evidence-checked, still private hypotheses (max 3). Legacy first item kept. */
+  intentCandidates: PrivateIntentCandidate[];
+  pendingQuestion: PendingIntentQuestion | null;
   modelId: "gemma-4-E2B-it";
   runtime: string;
   backend: "cpu";
@@ -79,6 +87,16 @@ export function validPrivateIntentCandidate(v: unknown): v is PrivateIntentCandi
     [...data.evidenceQuote].length <= 80;
 }
 
+function validPendingQuestion(value: unknown): value is PendingIntentQuestion | null {
+  if (value === null) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).sort().join(",") === "ordinal,text" &&
+    (v.ordinal === 1 || v.ordinal === 2) &&
+    typeof v.text === "string" && Boolean(v.text.trim()) &&
+    [...v.text].length <= 160 && new TextEncoder().encode(v.text).length <= 512;
+}
+
 export function parseModelSuggestion(value: unknown): ModelSuggestion {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("本地模型建議 Contract 錯誤");
@@ -92,6 +110,14 @@ export function parseModelSuggestion(value: unknown): ModelSuggestion {
       (v.contentHint !== null && typeof v.contentHint !== "string") ||
       (v.uncertainty !== null && typeof v.uncertainty !== "string") ||
       !validPrivateIntentCandidate(v.intentCandidate) ||
+      !Array.isArray(v.intentCandidates) || v.intentCandidates.length > 3 ||
+      !v.intentCandidates.every(candidate =>
+        candidate !== null && validPrivateIntentCandidate(candidate)) ||
+      (v.intentCandidates.length === 0 && v.intentCandidate !== null) ||
+      (v.intentCandidates.length > 0 &&
+       JSON.stringify(v.intentCandidates[0]) !== JSON.stringify(v.intentCandidate)) ||
+      !validPendingQuestion(v.pendingQuestion) ||
+      (v.intentCandidate !== null && v.pendingQuestion !== null) ||
       !Number.isSafeInteger(v.elapsedMs) || Number(v.elapsedMs) < 0 ||
       !Number.isSafeInteger(v.updatedAtMs)) {
     throw new Error("本地模型建議 Contract 錯誤");
@@ -133,4 +159,17 @@ export async function loadModelSuggestion(
   validId(id);
   const result = await invoke("load_model_suggestion", { id });
   return result === null ? null : parseModelSuggestion(result);
+}
+
+/** A B09 answer is explicitly typed by the person, never by the model. */
+export async function answerIntentQuestion(
+  invoke: InvokeAdapter, assetId: string, ordinal: 1 | 2, answer: string
+): Promise<void> {
+  validId(assetId);
+  if ((ordinal !== 1 && ordinal !== 2) || !answer.trim() ||
+      [...answer].length > 500 ||
+      new TextEncoder().encode(answer).length > 2048) {
+    throw new Error("B09_INVALID_ANSWER");
+  }
+  await invoke("answer_intent_question", { assetId, ordinal, answer: answer.trim() });
 }

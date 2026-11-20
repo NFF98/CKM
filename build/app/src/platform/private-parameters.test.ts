@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   confirmParameter, listParameters, listRegistry, parsePrivateParameter,
-  previewConcept, saveParameter, type PrivateParameter
+  previewConcept, saveParameter, suggestApprovedAliasesFromGoal, type PrivateParameter
 } from "./private-parameters";
 
 const draftId = "f126cb5c-dc54-4666-b460-3b2e7b41ca13";
@@ -15,11 +15,22 @@ const observed: PrivateParameter = {
   state: "OBSERVED", expiryPolicy: "intent_lifecycle",
   expiresAtMs: null, reviewDueAtMs: null, visibility: "private",
   shareConsent: false, confirmedEventId: null, registryVersion: 1,
-  goalRevision: 1, version: 1, stale: false,
+  goalRevision: 1, version: 1, stale: false, matchSlotIndex: null,
   createdAtMs: 1794890000000, updatedAtMs: 1794890000000,
 };
 
 describe("B05 Private Parameter Registry Contract", () => {
+  it("US-01C: only N2 evidence in a confirmed Goal offers an unconfirmed P1 alias",()=>{
+    for (const goal of ["我要找 JLPT N2 學伴","我想練 N2 口說","日語二級練習"]) {
+      expect(suggestApprovedAliasesFromGoal(goal)).toEqual(["JLPT N2"]);
+    }
+    for (const goal of ["パクる","汽車 N20 引擎改裝","時裝模仿課程",
+      "日文 N1"]) {
+      expect(suggestApprovedAliasesFromGoal(goal)).toEqual([]);
+    }
+  });
+
+
   it("Registry 僅列出經已知規格批准的概念", async () => {
     const registry = [{
       conceptId:"study.jlpt_level",aliases:["N2","JLPT N2","日語二級"],
@@ -64,7 +75,7 @@ describe("B05 Private Parameter Registry Contract", () => {
 
   it("人工確認命令只帶 UUID 與版本，event ID 由 Rust 生成", async () => {
     const confirmed={...observed,state:"CONFIRMED",version:2,
-      confirmedEventId:"995f67bb-ddde-4c74-9e48-bc2c5e14455e"};
+      confirmedEventId:"995f67bb-ddde-4c74-9e48-bc2c5e14455e",matchSlotIndex:0};
     const invoke=vi.fn().mockResolvedValue(confirmed);
     expect((await confirmParameter(invoke,draftId,id,1)).state).toBe("CONFIRMED");
     expect(invoke).toHaveBeenCalledWith("confirm_private_parameter",{
@@ -81,6 +92,8 @@ describe("B05 Private Parameter Registry Contract", () => {
       {...observed,scope:"profile"},
       {...observed,state:"CONFIRMED"},
       {...observed,confirmedEventId:"fake"},
+      {...observed,matchSlotIndex:8},
+      {...observed,matchSlotIndex:-1},
     ]) {
       expect(()=>parsePrivateParameter(invalid)).toThrow("Contract");
     }

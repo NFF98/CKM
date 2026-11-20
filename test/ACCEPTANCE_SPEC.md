@@ -21,6 +21,25 @@
 | **US-01-06** | 追問缺資訊及實測 8 個活躍 Concepts 上限 | B09 每次主動 **0～3 題（含 Goal 確認）**，多次重試不重問；B06 SQLite/Rust 硬限制 **最多 8 種已核准有效 Matching Concepts**；第 9 個必要概念不能悄悄覆蓋既有硬條件（T10–T13） |
 | **US-01-07** | 使用者按「只收藏」、取消確認，或離線後修改／撤銷 | 無自動 Goal/Consent/Cloud；已確認版本/事件真實、狀態可回讀；B07/08 只提供合法私人操作／預覽，不假裝 Cloud 已同步 |
 
+### US-01B／C／D 的可重現工程 Test Case 補充（PR #17，2026-11-19）
+
+> 以下為**提交的合成跨模組測試**，不是 Android 實測 PASS；若最新 CI 尚未完成或失敗，按 PR Checks 修復後才列為工程 PASS。不能取代上方的真機 US-01-01～07。
+
+| Test ID | 新增測試與驗收對象 | 新 PR Engineering 狀態 | Android E2E |
+|---|---|---|---|
+| **US-01A-MULTI-01** | 原文明確想真人合作時，可得到 1～3 個具原文字面證據的不同私人 Goal 候選；每個可分別採納、修改並透過 B04 本人確認。來源不充分則 UNKNOWN；舊單一候選 SQLite 可讀。 | Rust／SQLite／TypeScript 合成跨模組測試已提交；跨語境真機品質未量測 | **NOT_RUN** |
+| **US-01B-OCR-01** | Image → 真本地 OCR 輸出文字 → 共用 Gemma Rust Candidate → B04 本人確認 → SQLite 重開；未經確認只保存私有候選。 | Rust 跨模組合成 OCR 輸入測試已提交；不假裝是 ML Kit 真機結果 | **NOT_RUN** |
+| **US-01B-OCR-02** | 修正 OCR → 先前來源 hash 的模型候選失效，舊回覆不能覆寫；Fashion/Car 的非合作內容為 UNKNOWN。 | Rust SQLite 回歸測試已提交 | **NOT_RUN** |
+| **US-01B-VISION-01** | 無字圖片／OCR 空結果不得以文字模型自稱看懂圖片像素。 | Rust `MODEL_INPUT_UNKNOWN` 測試／UI `vision_unknown` | **NOT_RUN** |
+| **US-01C-SLOT-01** | 確認後來源、版本、事件合法方可分配私有 B06 Slot 0–7；Rust Transaction 與 SQLite CHECK／UNIQUE／Trigger 均生效。 | Rust SQLite 真表測試已提交；T01 **僅有 `study.jlpt_level`** | **NOT_RUN** |
+| **US-01C-SLOT-09** | 8 個不同已批准且有效的 Matching Concept，再加入第 9 類：Rust、SQLite 都拒絕且不丟掉前 8 類。 | **BLOCKED：T-01 未核准其他類別**；只能驗證 slotIndex=8／直接 SQL／UNKNOWN 不通過，不能冒充完整 8＋1 | **NOT_RUN** |
+| **US-01C-Q-01** | B09 先看 UNKNOWN 才選一個必要追問，一次最多一題，最多兩次智能補問，加上本人 Goal 確認的最多三個關口；0 題合法。 | SQLite ordinal 1–2／唯一 pending／本人回答存證／來源版本／去重測試已提交；有用性待真機 | **NOT_RUN** |
+| **US-01D-LIFE-01** | 本人明確設定未來一次性截止時刻；到期不能保留可用 slot，且不可把「週六」當每週。 | Rust SQLite expiry＋失效 Gate 測試已提交 | **NOT_RUN** |
+| **US-01D-REVOKE-01** | 離線本地撤銷 → 立即阻止 Goal 再編輯／配對 slot；重新開機仍撤銷；不能假裝 Cloud 已 ACK。 | Rust SQLite revision／事件／cascade／重開測試已提交 | **NOT_RUN** |
+| **US-01D-PREVIEW-01** | 只顯示本機 Goal + 合法 Concept 候選清單；`consentRecorded=false`、`canUpload=false`；原圖／OCR／私人補問不進預覽 Payload。 | TypeScript Contract＋Rust Read-only 查詢已提交；最終雲端欄位尚未核准 | **NOT_RUN** |
+
+**範圍區別：** B07 本地撤銷不等於已有 Cloud 端紀錄被成功撤回。B08 **尚無真實逐項 Consent 的 Cloud 發布實作**，所以不能聲稱 US-01D／B08 全部完成。跨域 Fashion/Car 只核對模型理解與 UNKNOWN，**不能**越權在 P1 配對真人。
+
 **US-01 PASS 條件：** US-01-01～07 的真 Android User Journey（含整合的 Rust/SQLite／錯誤測試）均有 Evidence，相關 BXX P0 Gate 也 PASS。**現在整條 US-01 = FAIL**，因 Gemma 真機只解釋文字、沒有可用意圖候選→確認的連接。既有 B03 OCR/詞義及 B05 Registry CI PASS 不能抵銷這個 NG。
 
 ### US-02：本人授權 → Cloud 真正找到相容真人（**NOT_RUN**）

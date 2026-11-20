@@ -1,6 +1,7 @@
 mod local_store;
 mod goal_draft;
 mod parameter_registry;
+mod local_consent;
 mod platform;
 use platform::NativeAdapter;
 use serde::Serialize;
@@ -158,6 +159,14 @@ async fn local_model_propose(app: tauri::AppHandle, id: String) -> Result<local_
     }).await.map_err(|_| "MODEL_INFERENCE_FAILED".to_string())?
 }
 
+/// B09: explicit user's private response to one pending source-versioned question.
+#[tauri::command]
+fn answer_intent_question(
+    app: tauri::AppHandle, asset_id: String, ordinal: i64, answer: String,
+) -> Result<(), String> {
+    private_store(&app)?.answer_intent_question(&asset_id, ordinal, &answer)
+}
+
 #[tauri::command]
 fn load_model_suggestion(app: tauri::AppHandle, id: String) -> Result<Option<local_store::ModelSuggestion>, String> {
     private_store(&app)?.load_model_suggestion(&id)
@@ -183,6 +192,43 @@ fn confirm_private_goal(
 ) -> Result<goal_draft::PrivateGoalDraft, String> {
     let root = app.path().app_data_dir().map_err(|_| "STORAGE_UNAVAILABLE".to_string())?;
     goal_draft::GoalStore::open(&root)?.confirm(input)
+}
+
+/// US-01D/B07: user-only local withdrawal/deadline; still no Cloud sync.
+#[tauri::command]
+fn update_private_goal_lifecycle(
+    app: tauri::AppHandle,
+    input: goal_draft::LifecycleUpdateInput,
+) -> Result<goal_draft::PrivateGoalDraft, String> {
+    let root = app.path().app_data_dir().map_err(|_| "STORAGE_UNAVAILABLE".to_string())?;
+    goal_draft::GoalStore::open(&root)?.update_lifecycle(input)
+}
+
+/// US-01D/B08: show private fields; final Cloud publish consent belongs to Sprint 2.
+#[tauri::command]
+fn preview_private_goal_share(
+    app: tauri::AppHandle, asset_id: String,
+) -> Result<goal_draft::PrivateSharePreview, String> {
+    let root=app.path().app_data_dir().map_err(|_|"STORAGE_UNAVAILABLE".to_string())?;
+    goal_draft::GoalStore::open(&root)?.share_preview(&asset_id)
+}
+
+/// B08: inspect which approved field identifiers the person may explicitly review.
+/// Local review is never Cloud publish authority.
+#[tauri::command]
+fn load_local_share_review(
+    app: tauri::AppHandle, asset_id: String,
+) -> Result<local_consent::LocalShareReview, String> {
+    let root=app.path().app_data_dir().map_err(|_|"STORAGE_UNAVAILABLE".to_string())?;
+    local_consent::LocalConsentStore::open(&root)?.load(&asset_id)
+}
+
+#[tauri::command]
+fn record_local_share_review(
+    app: tauri::AppHandle, input: local_consent::ReviewInput,
+) -> Result<local_consent::LocalShareReview, String> {
+    let root=app.path().app_data_dir().map_err(|_|"STORAGE_UNAVAILABLE".to_string())?;
+    local_consent::LocalConsentStore::open(&root)?.review(input)
 }
 
 /// B05: versioned allowlisted Concept Registry; T-01 complete whitelist remains OPEN.
@@ -221,7 +267,7 @@ fn list_parameter_proposals(
 }
 
 /// Explicit user action only: Rust makes its own confirmation event and increments version.
-/// Still private: B06 bounded slots and B08 sharing have NOT been implemented.
+/// Still private: B06 slots never authorize Cloud sharing; B08 review is local only.
 #[tauri::command]
 fn confirm_private_parameter(
     app: tauri::AppHandle,
@@ -247,8 +293,13 @@ pub fn run() {
             import_local_model,
             local_model_propose,
             load_model_suggestion,
+            answer_intent_question,
             load_private_goal_draft,
             confirm_private_goal,
+            update_private_goal_lifecycle,
+            preview_private_goal_share,
+            load_local_share_review,
+            record_local_share_review,
             list_concept_registry,
             preview_parameter_concept,
             save_parameter_proposal,

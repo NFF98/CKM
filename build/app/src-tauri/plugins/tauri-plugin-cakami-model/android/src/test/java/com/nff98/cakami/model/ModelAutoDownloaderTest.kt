@@ -77,4 +77,62 @@ class ModelAutoDownloaderTest {
         assertTrue(ModelAutoDownloader.GEMMA_URL.startsWith("https://huggingface.co/"))
         assertEquals(2_588_147_712L, ModelAutoDownloader.GEMMA_SIZE)
     }
+    @Test
+    fun updateReusesExistingVerifiedE2BWithoutDownload() {
+        val dir = java.nio.file.Files.createTempDirectory("cakami-reuse").toFile()
+        val model = File(dir, "gemma-4-E2B-it.litertlm")
+        val marker = File(dir, "gemma-4-E2B-it.litertlm.sha256")
+        val hash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        try {
+            model.writeText("hello")
+            marker.writeText(hash)
+            assertEquals(
+                ModelBootAction.USE_INSTALLED,
+                ModelReusePolicy.decide(model, marker, 5L, hash),
+            )
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun updateWithMissingMarkerVerifiesLocalModelRatherThanRedownloading() {
+        val dir = java.nio.file.Files.createTempDirectory("cakami-recover").toFile()
+        val model = File(dir, "gemma-4-E2B-it.litertlm")
+        val marker = File(dir, "gemma-4-E2B-it.litertlm.sha256")
+        val hash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        try {
+            model.writeText("hello")
+            assertEquals(
+                ModelBootAction.VERIFY_EXISTING,
+                ModelReusePolicy.decide(model, marker, 5L, hash),
+            )
+            assertTrue(ModelDownloadWirePolicy.matchesSha256(model, hash))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun updateNeverSilentlyOverwritesUnexpectedExistingModel() {
+        val dir = java.nio.file.Files.createTempDirectory("cakami-guard").toFile()
+        val model = File(dir, "gemma-4-E2B-it.litertlm")
+        val marker = File(dir, "gemma-4-E2B-it.litertlm.sha256")
+        val hash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        try {
+            assertEquals(
+                ModelBootAction.DOWNLOAD_IF_NEEDED,
+                ModelReusePolicy.decide(model, marker, 5L, hash),
+            )
+            model.writeText("bad")
+            marker.writeText(hash)
+            assertEquals(
+                ModelBootAction.VERIFY_EXISTING,
+                ModelReusePolicy.decide(model, marker, 5L, hash),
+            )
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
 }
