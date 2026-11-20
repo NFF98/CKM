@@ -121,6 +121,14 @@
 
 > 上圖是高層順序，實際多重依賴依「二、功能式建置待辦」表格為準。B10 可在本地核心完成之前展開設計，但真正對外發布需通過 B06／B08 等檢查。
 
+## US01-OCR-03｜直接替換日文 OCR 引擎（2026-11-21）
+
+- **選型**：已開始以官方 **PaddleOCR PP-OCRv6 Small ONNX** 取代 `ML Kit Japanese`，官方 Android SDK 用 ONNX Runtime／OpenCV，離線執行。與另需更新的 Gemma 4 E2B **不同模型／路徑**，正常同簽章 APK 更新不得重新下載 2.59 GB。
+- **不是 Medium**：PP-OCRv6 Medium 的辨識指標較高，但官方 Android 範例直接支援 Small，第一版選 Small 是手機可安裝性與效能折衷，並非宣稱它對所有日文圖片全球第一。
+- **實作狀態**：26 個官方 Apache 2.0 Kotlin SDK 來源 pinned `dab3fe35379033fdcb2d0e9572fac0b36c9a9ebf`，完整模型以官方 HuggingFace 在 APK **建置時** bundle；Android 原生 Plugin 已改用 `paddle_ocrv6_small_onnx`；Rust 同時允許舊 ML Kit 的持久化紀錄與新 PaddleOCR 的紀錄。正在跑 Kotlin/native/APK 回歸驗證，**未出現可安裝且簽章驗證過的 0.1.5 APK 前不可宣稱發版完成**。
+- **必須通過**：同一批使用者照片（至少 10 張）量測 CER 字元錯誤率；照片與私人 Goal 保留、錯誤可人工修正、飛航模式可辨識、不上傳、官方模型未遺漏。手機尚未實測，不能聲稱準確率已從 40% 提升至多少。
+- [v0.1.5 真機驗收](../test/US01_PP_OCRV6_015_PHONE_TEST.md)。
+
 ## US-01 即時阻斷缺陷（2026-11-21｜真機回報）
 
 **狀態：用戶真機 FAIL；程式修正提交中，真機重測 NOT_RUN。**
