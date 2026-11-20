@@ -290,3 +290,17 @@ textarea {
   .step-button { font-size: 11px; }
   .asset-next-actions { grid-template-columns: 1fr; }
 }
+
+
+/* Short, immediately actionable offline next steps; separate from AI conjectures. */
+.next-actions { display: grid; gap: 9px; margin: 10px 0 14px; }
+.next-action-card {
+  padding: 12px;
+  border: 1px solid #b7ddd1;
+  border-radius: 13px;
+  background: #f5fbf8;
+}
+.next-action-card strong { display: block; color: #0a6250; font-size: 15px; }
+.next-action-card p { font-size: 13px; color: #4f6660; margin: 5px 0 9px; }
+.next-action-card .secondary { min-height: 42px; margin: 0; background: #fff; }
+.model-panel .next-action-result { white-space: pre-wrap; }
