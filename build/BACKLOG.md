@@ -155,3 +155,12 @@
 
 ---
 本 Backlog 依最新三份設計規格重新整理；**尚無執行進度、測試結果或部署成果**。
+
+## US01-E2B-04｜即時修復：保留 E2B、解除 AI 候選封鎖（2026-11-21）
+
+- **使用者實測 FAIL**：「JLPT」缺乏 E2B 實際推薦。E2B 不需重下載。
+- **根因**：提示詞強制繁複 JSON/合作意圖；Rust `wants && together` 將其他候選隱藏；UI 將 AI 結果藏在進階。
+- **本切片**：從可安裝 v0.1.4 分支獨立做 v0.1.6 E2B-only hotfix（不混未驗收的 PaddleOCR）：縮短 JSON prompt，允許 2–3 個「可能用途」，實際 E2B 結果位於主畫面；沒有候選時仍有明確標示的固定選項。
+- **安全**：每個來源證據必須逐字存在、最多 3 項、私有 suggested_private；不能自動建立確認事件、同意、公開或配對。按本人確認才存私人 Goal。
+- **測試**：單詞 JLPT 仍能獲得 3 個模型候選，Rust 不建立 Goal；前端 TS、Rust、Android Kotlin 編譯 PASS 後，才給同 App ID、固定簽章可覆蓋 v0.1.4 的 APK。
+- [手機驗收](../test/US01_E2B_GATE_016_PHONE_TEST.md)。真機效果待測，不能將編譯通過寫成 AI 品質 PASS。
