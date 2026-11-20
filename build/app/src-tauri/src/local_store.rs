@@ -661,7 +661,10 @@ impl LocalStore {
     /// 只接受 Rust 從 native plugin 收到的辨識結果，不暴露任意「偽 OCR」寫入 Command。
     pub fn save_recognition(&self, id: &str, native: NativeOcrResult) -> Result<OcrRecord, String> {
         let id = Uuid::parse_str(id).map_err(|_| store_error("INVALID_ASSET_ID"))?.to_string();
-        if native.engine != "mlkit_japanese_bundled" || native.engine_version != "16.0.1" {
+        let trusted_engine =
+            (native.engine == "mlkit_japanese_bundled" && native.engine_version == "16.0.1") ||
+            (native.engine == "paddle_ocrv6_small_onnx" && native.engine_version == "6.0.0");
+        if !trusted_engine {
             return Err(store_error("OCR_INVALID_RESULT"));
         }
         if native.text.len() > MAX_TEXT_BYTES || native.segments.len() > 500 ||
