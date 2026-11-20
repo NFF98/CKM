@@ -450,7 +450,22 @@ let statusUpdating = false;
 function renderModelProvisioning(s: ModelStatus): void {
   const ready = s.installed && s.integrityVerified;
   const pending = s.downloadState === "downloading" || s.downloadState === "verifying";
-  const pct = Math.floor(s.downloadedBytes / s.totalBytes * 100);
+  const pct = s.totalBytes > 0 ? Math.floor(s.downloadedBytes / s.totalBytes * 100) : 0;
+  const deviceSummary = get<HTMLElement>("#device-model-summary");
+  const deviceDetails = get<HTMLDetailsElement>("#device-model-details");
+  if (ready) {
+    deviceSummary.textContent = "本機 AI：已準備好。更新不需要重新下載 E2B。";
+    if (modelSection.parentElement !== deviceDetails) {
+      deviceDetails.append(modelSection);
+      deviceDetails.open = false;
+    }
+  } else {
+    deviceSummary.textContent = pending
+      ? "本機 AI：下載或驗證中（僅首次設定）"
+      : "本機 AI 尚未準備完成，可在新增頁查看進度。";
+    const onboarding = get<HTMLElement>("#model-onboarding");
+    if (modelSection.parentElement !== onboarding) onboarding.append(modelSection);
+  }
   modelProgress.hidden = !pending;
   modelProgress.value = pct;
   modelDownloadPercent.textContent = pending || s.downloadedBytes > 0 && !ready
@@ -543,35 +558,42 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
   note.textContent = "只依保存的文字或 OCR 推論；不明確就不猜 Goal。任何建議都需本人修改、確認，且不代表分享同意。";
   panel.append(heading, state, output, button, note);
   preview.append(panel);
+  applyAssetStep();
 
   function showSuggestion(result: ModelSuggestion): void {
     output.replaceChildren();
+    const evidenceDetails = document.createElement("details");
+    evidenceDetails.className = "advanced-details";
+    const evidenceSummary = document.createElement("summary");
+    evidenceSummary.textContent = "查看 AI 的理解依據";
     const quote = document.createElement("p");
-    quote.textContent = "原文證據：" + result.evidenceQuote;
+    quote.textContent = "原文：" + result.evidenceQuote;
     const hint = document.createElement("p");
-    hint.textContent = "可能內容：" + (result.contentHint || "未知");
+    hint.textContent = "理解：" + (result.contentHint || "未知");
     const uncertain = document.createElement("p");
-    uncertain.textContent = "仍不確定：" + (result.uncertainty || "尚未確認是否正確");
-    output.append(quote, hint, uncertain);
+    uncertain.textContent = "不確定：" + (result.uncertainty || "尚未確認");
+    evidenceDetails.append(evidenceSummary, quote, hint, uncertain);
+    output.append(evidenceDetails);
     const candidates = result.intentCandidates.length > 0
       ? result.intentCandidates : result.intentCandidate ? [result.intentCandidate] : [];
     if (candidates.length) {
       const heading = document.createElement("p");
-      heading.textContent = "可能想一起完成的事（最多三個私人候選；不是已確認配對）";
+      heading.textContent = "AI 提出的可能目標（選一個，或自己寫）";
       output.append(heading);
       for (const [index, candidate] of candidates.entries()) {
         const intent = document.createElement("p");
-        intent.textContent = (index + 1) + " · " +
-          (candidate.domain === "unknown"
-            ? "原文線索／領域未知，須本人判斷"
-            : "AI 私人候選 · " + candidate.domain) + "：" + candidate.goalText;
-        const evidence = document.createElement("p");
-        evidence.className = "fineprint";
-        evidence.textContent = "可核對的本人原文：" + candidate.evidenceQuote;
+        intent.textContent = (index + 1) + ". " + candidate.goalText;
+        const evidence = document.createElement("details");
+        evidence.className = "advanced-details";
+        const evidenceTitle = document.createElement("summary");
+        evidenceTitle.textContent = "來源與根據";
+        const evidenceBody = document.createElement("p");
+        evidenceBody.textContent = (candidate.domain === "unknown" ? "未知領域" : candidate.domain) + " · " + candidate.evidenceQuote;
+        evidence.append(evidenceTitle, evidenceBody);
         const adopt = document.createElement("button");
         adopt.type = "button";
         adopt.className = "secondary";
-        adopt.textContent = "採用候選 " + (index + 1) + "，先修改再本人確認";
+        adopt.textContent = "用這個目標";
         adopt.addEventListener("click", () => {
           if (selectedAssetId !== assetId) return;
           const field = preview.querySelector<HTMLTextAreaElement>(
@@ -582,8 +604,9 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
             return;
           }
           field.value = candidate.goalText;
+          applyAssetStep("goal");
           field.focus();
-          state.textContent = "已將私人候選填入 Goal 編輯欄；尚未確認、保存或分享。";
+          state.textContent = "已填入目標，請核對後親自確認；尚未保存或分享。";
         });
         output.append(intent, evidence, adopt);
       }
@@ -629,7 +652,8 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
       });
       output.append(label, respond);
     }
-    state.textContent = "Gemma 本地建議已保存（尚未本人確認） · " + result.elapsedMs + " ms";
+    state.textContent = "AI 建議已準備好；請自己選擇或修改目標。";
+    showTaskFeedback("input", "需要輸入：採用建議或自行寫下真正目標");
   }
   try {
     const saved = await loadModelSuggestion(rust, assetId);
@@ -643,7 +667,8 @@ async function renderModelPanel(assetId: string, autoAnalyze = false): Promise<v
   button.addEventListener("click", () => {
     if (selectedAssetId !== assetId) return;
     button.disabled = true;
-    state.textContent = "正在手機內執行 Gemma 4 E2B（不會連線到雲端 AI）…";
+    state.textContent = "本機 AI 分析中…";
+    showTaskFeedback("running", "系統執行：AI 正在本機理解內容");
     void (async () => {
       try {
         const result = await proposeModel(rust, assetId);
@@ -730,6 +755,8 @@ async function deleteSelected(): Promise<void> {
       selectedAssetId = null;
       preview.replaceChildren();
       preview.hidden = true;
+      tabAsset.disabled = true;
+      if (!libraryView.hidden || !assetView.hidden) setView("library");
     }
     deleteDialog.close();
     saveStatus.textContent = "私人收藏已刪除；重新開啟 App 後不應再次出現。";
@@ -780,6 +807,7 @@ async function renderOcrEditor(assetId: string): Promise<void> {
   privacy.textContent = "圖片先經本地 ML Kit OCR，再用和純文字相同的 Gemma 意圖引擎；無文字保留 vision_unknown。Gemma 沒有接收圖片像素，也不使用雲端 AI。";
   panel.append(heading, state, recognized, run, field, save, privacy);
   preview.append(panel);
+  applyAssetStep();
 
   function displayOcr(record: OcrRecord): void {
     state.textContent = record.status === "recognized"
@@ -802,7 +830,8 @@ async function renderOcrEditor(assetId: string): Promise<void> {
     if (selectedAssetId !== assetId) return;
     run.disabled = true;
     save.disabled = true;
-    state.textContent = "手機本地 OCR 辨識中，不會把原圖送往雲端…";
+    state.textContent = "系統正在手機內辨識文字…";
+    showTaskFeedback("running", "系統執行：正在辨識照片文字");
     void (async () => {
       try {
         const result = await recognizeOcr(rust, assetId);
@@ -812,6 +841,7 @@ async function renderOcrEditor(assetId: string): Promise<void> {
           preview.querySelector(".model-panel")?.remove();
           const readable = Boolean((result.correctedText ?? result.rawText ?? "").trim());
           void renderModelPanel(assetId, readable);
+          if (readable) applyAssetStep("understand");
           if (!readable) {
             state.textContent = "vision_unknown：圖片沒有可讀文字，不能假裝看懂像素。可人工修正或只收藏。";
           }
@@ -840,6 +870,7 @@ async function renderOcrEditor(assetId: string): Promise<void> {
           preview.querySelector(".model-panel")?.remove();
           // Source SHA is rechecked by Rust: old intent candidates cannot be reused.
           void renderModelPanel(assetId, true);
+          applyAssetStep("understand");
         }
       } catch (error) {
         if (selectedAssetId === assetId) state.textContent = errorMessage(error);
@@ -859,10 +890,10 @@ async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Pr
   panel.className = "parameter-panel";
   panel.setAttribute("aria-label", "私人配對條件與參數 Registry");
   const heading = document.createElement("h3");
-  heading.textContent = "私人條件（B05 Registry／B06 最多 8 slots）";
+  heading.textContent = "我確認的條件";
   const guidance = document.createElement("p");
   guidance.className = "fineprint";
-  guidance.textContent = "目前只有 N2／JLPT N2／日語二級是已知的同一種概念。其他輸入只會成為 UNKNOWN 私人候選，不會被當作正式配對條件。";
+  guidance.textContent = "只有你確認的條件才會使用。現階段支援辨認 JLPT N2；其他條件先保留為私人候選。";
   const status = document.createElement("p");
   status.className = "status";
   status.setAttribute("role", "status");
@@ -913,12 +944,17 @@ async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Pr
   const save = document.createElement("button");
   save.type = "button";
   save.className = "secondary";
-  save.textContent = "保存私人條件候選";
+  save.textContent = "保存候選條件";
   const list = document.createElement("ul");
   list.className = "parameter-list";
-  panel.append(heading, guidance, status, aliasField, valueField, expiryField,
-    dateField, save, list);
+  const manual = document.createElement("details");
+  manual.className = "advanced-details";
+  const manualSummary = document.createElement("summary");
+  manualSummary.textContent = "＋ 手動新增其他條件";
+  manual.append(manualSummary, aliasField, valueField, expiryField, dateField, save);
+  panel.append(heading, guidance, status, list, manual);
   preview.append(panel);
+  applyAssetStep();
 
   let rows: PrivateParameter[] = [];
   // From a PERSON-CONFIRMED Goal, surface the one currently approved N2 concept.
@@ -932,9 +968,9 @@ async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Pr
     const accept = document.createElement("button");
     accept.type = "button";
     accept.className = "secondary";
-    accept.textContent = "採用 Goal 裡的 N2 條件候選";
+    accept.textContent = "加入 N2 候選";
     suggestion.append(line, accept);
-    panel.insertBefore(suggestion, aliasField);
+    panel.insertBefore(suggestion, list);
     accept.addEventListener("click", () => {
       if (selectedAssetId !== assetId || accept.disabled) return;
       const existing = rows.find(item => item.conceptId === "study.jlpt_level");
@@ -973,10 +1009,9 @@ async function renderParameterPanel(assetId: string, goal: PrivateGoalDraft): Pr
       if (!active()) return;
       list.replaceChildren();
       const used = rows.filter(item => item.matchSlotIndex !== null && !item.stale).length;
-      status.textContent = used + "/8 個已確認的本地私人配對概念（不是八個必填問題）。" +
-        " 仍無 Cloud 分享授權；T-01 完整白名單尚未核准。";
+      status.textContent = "已確認 " + used + " 項私人條件（最多 8 項）。";
       if (!rows.length) {
-        status.textContent += " 尚無任何私人條件；單純收藏／OCR／模型不會自動新增。";
+        status.textContent += " 目前沒有條件，可自行新增或略過。";
       }
       for (const item of rows) {
         const li = document.createElement("li");
@@ -1093,14 +1128,14 @@ async function renderGoalPanel(assetId: string): Promise<void> {
   heading.textContent = "你想和別人一起完成什麼？";
   const explanation = document.createElement("p");
   explanation.className = "fineprint";
-  explanation.textContent = "Gemma 可以提出私人 Goal 候選，但「パクる」等無上下文內容不能直接當成找人意圖。你可以採用建議、修改，或只收藏。";
+  explanation.textContent = "AI 只會建議，最後由你決定；只存手機，不會自動找人。";
   const state = document.createElement("p");
   state.className = "status";
   state.setAttribute("role", "status");
   state.setAttribute("aria-live", "polite");
   const field = document.createElement("label");
   field.className = "field-label";
-  field.textContent = "本人要確認的 Goal（可選用上方 AI 建議）";
+  field.textContent = "我真正想做的事";
   const input = document.createElement("textarea");
   input.rows = 3;
   input.dataset.goalInput = "true";
@@ -1112,19 +1147,19 @@ async function renderGoalPanel(assetId: string): Promise<void> {
   const keep = document.createElement("button");
   keep.type = "button";
   keep.className = "secondary";
-  keep.textContent = "只收藏內容";
+  keep.textContent = "返回收藏";
   const confirm = document.createElement("button");
   confirm.type = "button";
   confirm.className = "primary";
-  confirm.textContent = "確認 Goal，建立私人草稿";
+  confirm.textContent = "確認我的目標";
   choices.append(keep, confirm);
   const disclaimer = document.createElement("p");
   disclaimer.className = "fineprint";
-  disclaimer.textContent = "確認只會產生私人 Goal 與本人事件；B05／B06 另外驗證並限制最多 8 種本地概念。B08 分享授權尚未開放，絕不會自動發布。";
+  disclaimer.textContent = "確認後仍是私人草稿，不會上傳或公開。";
   const lifecycle = document.createElement("section");
   lifecycle.className = "goal-lifecycle";
   const lifecycleTitle = document.createElement("h3");
-  lifecycleTitle.textContent = "私人 Intent 管理（期限／撤銷／本地分享預覽）";
+  lifecycleTitle.textContent = "私人目標管理";
   const expiryLabel = document.createElement("label");
   expiryLabel.className = "field-label";
   expiryLabel.textContent = "一次性有效期限（明確日期與時間）";
@@ -1147,7 +1182,7 @@ async function renderGoalPanel(assetId: string): Promise<void> {
   previewText.className = "fineprint";
   previewText.textContent = "未經本人授權不可上傳；T-01 完整配對概念仍待核准。";
   const localReviewTitle = document.createElement("h3");
-  localReviewTitle.textContent = "B08 本地逐項分享審核（不是上傳授權）";
+  localReviewTitle.textContent = "本地分享項目審核（不會上傳）";
   const localReviewNote = document.createElement("p");
   localReviewNote.className = "fineprint";
   localReviewNote.textContent = "勾選的只有你願意將來考慮分享的欄位；目前仍全部留在手機。未來接雲端時，必須另外取得正式授權。";
@@ -1169,8 +1204,14 @@ async function renderGoalPanel(assetId: string): Promise<void> {
     localReviewStatus,approveLocal,revokeLocal);
   lifecycle.append(lifecycleTitle,expiryLabel,expiryButton,revoke,previewShare,
     previewText,reviewSection);
-  panel.append(heading, explanation, state, field, choices, disclaimer, lifecycle);
+  const extras = document.createElement("details");
+  extras.className = "advanced-details";
+  const extrasTitle = document.createElement("summary");
+  extrasTitle.textContent = "進階管理：期限、撤銷、分享預覽";
+  extras.append(extrasTitle, lifecycle);
+  panel.append(heading, explanation, state, field, choices, disclaimer, extras);
   preview.append(panel);
+  applyAssetStep();
 
   let current: PrivateGoalDraft | null = null;
   let localReview: LocalShareReview | null = null;
@@ -1214,12 +1255,13 @@ async function renderGoalPanel(assetId: string): Promise<void> {
     confirm.disabled = !active;
     expiryButton.disabled = !active;
     revoke.disabled = !active;
-    confirm.textContent = active ? "再次確認修改後的私人 Goal" : "Goal 已失效，不可再啟用";
+    confirm.textContent = active ? "儲存已確認的目標" : "目標已撤銷";
     expiryInput.value = saved.expiresAtMs === null ? "" :
       new Date(saved.expiresAtMs - new Date(saved.expiresAtMs).getTimezoneOffset()*60_000)
         .toISOString().slice(0,16);
     preview.querySelector(".parameter-panel")?.remove();
     if (active && selectedAssetId === assetId) void renderParameterPanel(assetId, saved);
+    applyAssetStep();
   }
 
   const showDialog = (message: string, label: string, action: () => Promise<void>) => {
@@ -1331,9 +1373,7 @@ async function renderGoalPanel(assetId: string): Promise<void> {
   // 成功路徑 A：只收藏內容，絕不調用 confirm_private_goal。
   keep.addEventListener("click", () => {
     if (selectedAssetId !== assetId || goalDialog.open) return;
-    state.textContent = current
-      ? "繼續只收藏。既有私人 Goal 草稿沒有改動，也不會公開。"
-      : "已選擇只收藏內容。沒有建立 Goal、配對 Intent，也不會搜尋真人。";
+    setView("library");
   });
 
   // 成功路徑 B：只有本人的明確確認，Rust 才能產生事件與私人草稿。
@@ -1362,11 +1402,17 @@ async function openAsset(id: string, autoAnalyze = false): Promise<void> {
   selectedAssetId = id;
   preview.hidden = false;
   preview.replaceChildren();
+  const sourcePanel = document.createElement("section");
+  sourcePanel.className = "asset-source-section";
   const heading = document.createElement("h3");
-  heading.textContent = "私人收藏內容";
+  heading.textContent = "已儲存的私人內容";
   const waiting = document.createElement("p");
   waiting.textContent = "正在從本機讀取…";
-  preview.append(heading, waiting);
+  sourcePanel.append(heading, waiting);
+  preview.append(sourcePanel);
+  tabAsset.disabled = false;
+  applyAssetStep("source");
+  setView("asset");
   try {
     const asset = await loadDrop(rust, id);
     if (selectedAssetId !== id) return;
@@ -1376,20 +1422,17 @@ async function openAsset(id: string, autoAnalyze = false): Promise<void> {
       img.className = "asset-image";
       img.alt = asset.summary.fileName || "私人圖片";
       img.src = `data:${asset.summary.mimeType};base64,${asset.dataBase64}`;
-      preview.append(img);
+      sourcePanel.append(img);
       await renderOcrEditor(id);
     } else {
       const content = document.createElement("pre");
       content.className = "asset-text";
       content.textContent = asset.text || "";
-      preview.append(content);
+      sourcePanel.append(content);
     }
     if (selectedAssetId === id) await renderModelPanel(id, autoAnalyze);
     if (selectedAssetId === id) await renderGoalPanel(id);
-    const note = document.createElement("p");
-    note.className = "fineprint";
-    note.textContent = "私人內容與本人 Goal 分開保存；即使確認 Goal，也只有本機私人草稿，不會自動公開或找學伴。";
-    preview.append(note);
+    applyAssetStep(autoAnalyze ? "understand" : "source");
   } catch (error) {
     if (selectedAssetId === id) waiting.textContent = errorMessage(error);
   }
