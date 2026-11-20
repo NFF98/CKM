@@ -19,3 +19,14 @@
 - 不改 App ID、不卸載、不清資料、不重下載 Gemma E2B；不用雲端 AI/OCR。
 
 **目前待確認**：使用者真機上實際日文 OCR 修正前／後的文字準確率、JLPT 三種選項是不是有幫助，兩者仍需以使用者回報判斷 PASS / FAIL。
+
+## v0.1.4 發版檢查（2026-11-21）
+
+- [TypeScript／Vitest、Rust PASS](https://github.com/NFF98/CKM/actions/runs/44817321437)：JLPT 本地候選和既有 Rust 安全功能通過。
+- [Android Kotlin OCR/Model 編譯及單元測試 PASS](https://github.com/NFF98/CKM/actions/runs/44818390276)：包括 EXIF 方向處理相關 Plugin 編譯、低信心重試與第二次太差時不覆蓋原文的測試。
+- [Android 0.1.4 ARM64 建置 PASS](https://github.com/NFF98/CKM/actions/runs/44818462381)：`aapt` 真實確認 `com.nff98.ckm.dev`、versionCode `1004`、versionName `0.1.4`；source commit `48b5cf9aa0d8f6b71b96819cfa27b213a27cf0ab`。
+- 本次簽署的使用者版本：`CAKAMI-v0.1.4-JLPT-OCR-UPDATE-ARM64.apk`，169,398,260 bytes，APK SHA256 `0f1627378d54905bacca55bdcfb53aaa63c24f383433a1f16ad7aef8e3bb31f3`，存放於使用者當前 ChatGPT 對話附件。
+- APK 簽章 SHA256 `a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5` 與 CLEAN 0.1.2 完全相同；Android SDK 35 apksigner v2/v3 驗證 PASS。
+- RAW APK 和簽署版 AndroidManifest 完全一致，961 個非 META-INF ZIP assets CRC 與長度一樣。這份 APK **可以直接升級 CLEAN 固定簽章 CAKAMI**，不需重新下載完整 E2B；若舊手機仍安裝其他簽章則無法保證直接覆蓋。
+- **真 Android 使用者「JLPT→三個可操作選項」與「OCR 40% 下降/提高」 E2E：NOT_RUN**；模型/隱私資料是否保留仍需手機實測。
+- 初版 v0.1.3 OCR JUnit 測出低信心覆寫缺陷，不應提供用戶驗收；v0.1.4 已增加最低 0.45 confidence 門檻並通過新測試。
