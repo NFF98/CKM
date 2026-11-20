@@ -2,6 +2,8 @@ package com.nff98.cakami.ocr
 
 import android.app.Activity
 import android.graphics.BitmapFactory
+import androidx.exifinterface.media.ExifInterface
+import java.io.ByteArrayInputStream
 import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
@@ -64,7 +66,16 @@ class CakamiOcrPlugin(private val activity: Activity) : Plugin(activity) {
                 val client = TextRecognition.getClient(
                     JapaneseTextRecognizerOptions.Builder().build()
                 )
-                val image = InputImage.fromBitmap(bitmap, 0)
+                // BitmapFactory does NOT apply the JPEG/HEIC/PNG/WebP EXIF rotation.
+                // The old hard-coded 0 degrees caused sideways phone photos to be
+                // recognized as horizontal Japanese text. Read only local image bytes.
+                val degrees = try {
+                    ExifInterface(ByteArrayInputStream(bytes)).rotationDegrees
+                } catch (_: Exception) {
+                    0
+                }
+                val safeDegrees = if (degrees in listOf(0, 90, 180, 270)) degrees else 0
+                val image = InputImage.fromBitmap(bitmap, safeDegrees)
                 val settled = AtomicBoolean(false)
                 val handler = Handler(Looper.getMainLooper())
                 val timeout = Runnable {
