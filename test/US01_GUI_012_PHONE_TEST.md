@@ -30,3 +30,15 @@
 - Debug/RAW CI APK 有臨時簽章，**絕對不可提供直接安裝**；必須用固定私鑰重新簽署再提供。
 
 **重要**：只是在 GitHub CI 成功不代表真機已驗收；真機 APK 更新與 UI 驗收維持 `NOT_RUN`，直到使用者回報。
+
+## 2026-11-20：交付完成與證據
+
+- 本輪 UI 原始碼 commit：`65869ef2d258c7191903a27f86424f21048605df`。
+- [TypeScript／Vitest／Rust 完整 PASS](https://github.com/NFF98/CKM/actions/runs/44666375969)。
+- [Android 原生 Kotlin 編譯／Unit test PASS](https://github.com/NFF98/CKM/actions/runs/44666375972)。
+- [Android 0.1.2 ARM64 debug 原始編譯 PASS](https://github.com/NFF98/CKM/actions/runs/44666652984)。由 GitHub Actions `aapt` 真實核對 package `com.nff98.ckm.dev`, versionCode `1002`, versionName `0.1.2`。
+- 使用上輪 CLEAN 0.1.1 **完全相同的離線保存私鑰**重新簽署，簽章 SHA-256 = `a1ec5464e7f66dcd20a2b0d65f77db2c63c2b0aa3e72fe04479878c54f2eedf5`。Android SDK 35 `apksigner verify`: v2=true、v3=true。
+- 已簽署使用者 APK：`CAKAMI-v0.1.2-UI-UPDATE-ARM64.apk`，169,332,724 bytes，SHA-256 `e4eac8205070fa5ef7e9e3720904e1c9ff5ba40e8f6cfd4d73f205f0a7f4074d`，放在 ChatGPT 對話附件。APK 非 META-INF 961 檔案 checksum/length 與 RAW 原始編譯一致，AndroidManifest binary 完全一致。
+- 測試限制：沒有 Android 裝置可做真人操作。**實機四頁切換、E2B 更新不重抓、圖片／Goal UI 人工操作，均仍 NOT_RUN。**
+- 版本更新適用於已裝 **固定憑證 CLEAN 0.1.0/0.1.1** 的裝置；若手機仍安裝更早 GitHub 隨機 Debug 憑證版本，Android 本身會拒絕不同簽章的原地更新。絕對不可謊稱可保留那版的私人 E2B。
+- 未來 GitHub 自動打包尚需 repo secrets（固定 key 已被個別離線保留）；沒有私鑰的 Runner 產物只供離線重簽，不可直接給使用者安裝。
