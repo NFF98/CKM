@@ -29,4 +29,6 @@ dependencies {
     implementation(project(":tauri-android"))
     // bundled variant：辨識模型已包含在 App，飛航模式不需下載
     implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
+    // Read JPEG/PNG/WebP orientation offline; no external OCR service.
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
 }
